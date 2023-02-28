@@ -36,22 +36,26 @@ function Kitty:close(args_, on_exit, block)
   end
 end
 
-local function custom_open(fn)
+local function launcher(fn)
   return function(self, args, on_exit)
     if self.is_opened then
       return
     end
 
-    fn(self, args, on_exit)
+    local handle, pid = fn(self, args, on_exit)
+    -- TODO: get the window/tab id
 
     self.is_opened = true
+
+    return handle, pid
   end
 end
 
-Kitty.open = custom_open(function(self, args_, on_exit)
+Kitty.open = launcher(function(self, args_, on_exit)
   local args = {
-    -- "-o",
+    "-o",
     -- "allow_remote_control=yes",
+    "env=NVIM_LISTEN_ADDRESS=" .. vim.v.servername,
     "--listen-on",
     self.listen_on,
     "--title",
@@ -59,7 +63,7 @@ Kitty.open = custom_open(function(self, args_, on_exit)
     unpack(args_ or {}),
   }
 
-  vim.loop.spawn("kitty", {
+  return vim.loop.spawn("kitty", {
     args = args,
   }, function(...)
     -- self.is_opened = false
@@ -87,14 +91,22 @@ function Kitty:sub_window(o, where)
   local Sub = self:new(o)
   Sub.match_arg = "title:" .. Sub.title
 
-  Sub.launch_args = { "--window-title", Sub.title, "--tab-title", Sub.title, "--type", where }
+  Sub.launch_args = {
+    "--window-title",
+    Sub.title,
+    "--tab-title",
+    Sub.title,
+    "--type",
+    where,
+    "--env",
+    "NVIM_LISTEN_ADDRESS=" .. vim.v.servername,
+  }
 
-  Sub.open = custom_open(function(sub, args_, on_exit)
+  Sub.open = launcher(function(sub, args_, on_exit)
     sub.launch_args = vim.list_extend(sub.launch_args, args_ or {})
 
-    -- TODO: get the window/tab id
     -- vim.notify("Unimplemented", vim.log.levels.ERROR, {})
-    self:api_command("launch", sub.launch_args, on_exit)
+    return self:api_command("launch", sub.launch_args, on_exit)
   end)
 
   return Sub
