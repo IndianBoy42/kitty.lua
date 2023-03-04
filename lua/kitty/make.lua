@@ -1,15 +1,36 @@
--- TODO: build system/command runner
 local Make = {}
 
 local function nop(...)
   return ...
 end
 
-function Make.find_build_file(pattern)
+--- Helper to find a build file
+function Make.find_build_file(pattern, args)
   vim.notify("TODO: search cwd/lsp_root_dir for " .. pattern, vim.log.levels.WARN)
 end
 
--- Append commands to T.targets
+function Make.from_command(cmd, args, parse)
+  local loop = vim.loop
+  local stdout = loop.new_pipe(false)
+  loop.spawn(cmd, { args = args, stdio = { nil, stdout, nil } }, function()
+    if stdout then
+      stdout:read_stop()
+      stdout:close()
+    end
+  end)
+  loop.read_start(stdout, function(err, data)
+    if err then
+      vim.notify("Error running command: " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    if data then
+      parse(data)
+    end
+  end)
+end
+
+-- Append commands to self.targets
 -- name = { cmd = '', desc = ''}
 Make.builtin_target_providers = {
   ["make"] = function(targets, _)
@@ -21,14 +42,35 @@ Make.builtin_target_providers = {
     targets.default = targets.make
   end,
   ["just"] = function(targets, _)
+    if not vim.fn.executable "just" then
+      return
+    end
+
     targets.just_default = {
       cmd = "just",
-      desc = "Run Justfile",
+      desc = "Run Justfile default",
       priority = 100,
     }
-    targets.default = targets.just
+
+    Make.from_command("just", { "--list" }, function(data)
+      local lines = vim.split(data, "\n")
+      for i, line in ipairs(lines) do
+        if i > 1 then -- Skip first line
+          local parts = vim.split(line, "#")
+          local name = vim.trim(parts[1])
+          local desc = parts[2] and vim.trim(parts[2]) or name
+          targets["just: " .. name] = { cmd = "just " .. name, desc = desc }
+        end
+      end
+    end)
+
+    targets.default = targets.just_default
   end,
   ["cargo"] = function(targets)
+    if not vim.fn.filereadable "Cargo.toml" or not vim.fn.executable "cargo" then
+      return
+    end
+
     targets.check = {
       cmd = "cargo check",
       desc = "Check Cargo Project",
@@ -44,7 +86,14 @@ Make.builtin_target_providers = {
       desc = "Test Cargo Project",
       priority = 98,
     }
-    targets.run = { cmd = "cargo run", desc = "Run Cargo Project", priority = 97 }
+    targets.run = {
+      cmd = "cargo run",
+      desc = "Run Cargo Project",
+      priority = 97,
+    }
+
+    -- Make.from_command("cargo", {"--", "--list"}, parse)
+
     targets.default = targets.check
   end,
 }
@@ -75,6 +124,10 @@ function Make.setup(T)
 
   -- Functions
   function T:target_list()
+    if self.target_list_cache then
+      return self.target_list_cache
+    end
+
     -- TODO: this is kinda inefficient... luajit go brrrrr
     local M = {}
     for k, v in pairs(self.targets) do
@@ -93,6 +146,9 @@ function Make.setup(T)
 
       return a[1] < b[1]
     end)
+
+    self.target_list_cache = M
+
     return M
   end
   function T:call_or_input(arg, fun, input_opts, from_input)
@@ -156,6 +212,7 @@ function Make.setup(T)
     end
 
     cmd = cmd .. "\r"
+    print(cmd)
     if opts.launch_new then
       self:launch({}, opts.launch_new, { self.shell, "-c", cmd })
     else
@@ -197,6 +254,9 @@ function Make.setup(T)
   end
   function T:_choose_default(target_name)
     self.targets.default = self.targets[target_name]
+    if self.target_list_cache then
+      self.target_list_cache[1] = self.targets.default
+    end
   end
   function T:choose_default(target_name)
     self:call_or_select(target_name, "_choose_default", {
@@ -214,7 +274,9 @@ function Make.setup(T)
     end
     local cmd = target.cmd or target[2].cmd
     self.targets.last.cmd = cmd
-    self:run_cmd(cmd, { prompt = "Chosen Task has no Cmd" }, run_opts or target.run_opts, run_opts)
+    self:run_cmd(cmd, {
+      prompt = "Chosen Task has no Cmd",
+    }, run_opts or target.run_opts, run_opts)
   end
   function T:make(target, run_opts)
     self:call_or_select(target, "_make", {
@@ -240,6 +302,7 @@ function Make.setup(T)
         desc = name,
         run_opts = run_opts,
       }
+    self.target_list_cache = nil
   end
   function T:add_target(name, target, run_opts)
     function self:_add_target2(target_)
@@ -261,6 +324,7 @@ function Make.setup(T)
       desc = name,
       cmd = self.targets.last_manual.cmd,
     }
+    self.target_list_cache = nil
   end
   function T:target_from_last_manual(name, run_opts)
     self:call_or_input(name, "_add_target", { prompt = "Name" }, function(i)

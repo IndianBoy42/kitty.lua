@@ -1,9 +1,5 @@
 local K = {}
-local defaults = {
-  title = "Kitty.nvim",
-}
 K.setup = function(cfg)
-  cfg = vim.tbl_extend("keep", cfg or {}, defaults)
   local Term = require "kitty.term"
   local KT
   if cfg.from_current_win then
