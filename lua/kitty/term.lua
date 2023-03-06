@@ -272,6 +272,31 @@ function Kitty:get_text(extent, with_text, on_exit)
   end)
 end
 
+function Kitty:scroll(opts, on_exit, stdio)
+  local amount = opts.amount
+  if not amount and opts.till_end then
+    amount = "end"
+  end
+  if not amount and opts.till_start then
+    amount = "start"
+  end
+  if not amount and opts.up then
+    amount = tostring(opts.up) .. "-"
+  end
+  if not amount and opts.down then
+    amount = tostring(opts.down) .. "+"
+  end
+  return self:api_command("scroll", {
+    amount,
+  }, on_exit, stdio)
+end
+function Kitty:signal_child(signal, on_exit, stdio)
+  self:api_command("signal-child", { signal }, on_exit, stdio)
+end
+function Kitty:ls(on_exit, stdio)
+  self:api_command("ls", {}, on_exit, stdio)
+end
+
 function Kitty:set_match_arg_from_id(id)
   self.match_arg = "id:" .. id
 end
