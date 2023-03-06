@@ -38,10 +38,11 @@ function Make.setup(T)
   -- Options, state variables, etc
   T.cmd_history = {}
   T.targets = {
-    -- default = T.user_default,
     default = { desc = "Default" },
     last_manual = { desc = "Last Run Command" },
     last = { desc = "Last Run Task" },
+    -- on_save = { desc = "Will Run on Save" }, -- TODO: auto_on_save commands
+    -- TODO: combo tasks
   }
   T.focus_me = T.focus_me or false
   T.select = T.select or vim.ui.select
@@ -59,33 +60,39 @@ function Make.setup(T)
     end
 
   -- Functions
-  function T:target_list()
-    if self.target_list_cache then
-      return self.target_list_cache
+  function T:target_list(filter)
+    local list = self.target_list_cache
+    if list and not filter then
+      return list
     end
 
-    -- TODO: this is kinda inefficient... luajit go brrrrr
-    local M = {}
-    for k, v in pairs(self.targets) do
-      M[#M + 1] = { k, v }
+    if not list then
+      -- TODO: this is kinda inefficient... luajit go brrrrr
+      list = {}
+      for k, v in pairs(self.targets) do
+        list[#list + 1] = { k, v }
+      end
+      table.sort(list, function(a, b)
+        if a[1] == "default" then
+          return true
+        elseif b[1] == "default" then
+          return false
+        end
+
+        if a[2].priority or b[2].priority then
+          return (a[2].priority or 0) >= (b[2].priority or 0)
+        end
+
+        return a[1] < b[1]
+      end)
+      self.target_list_cache = list
     end
-    table.sort(M, function(a, b)
-      if a[1] == "default" then
-        return true
-      elseif b[1] == "default" then
-        return false
-      end
 
-      if a[2].priority or b[2].priority then
-        return (a[2].priority or 0) >= (b[2].priority or 0)
-      end
+    if filter then
+      list = vim.tbl_filter(filter, list)
+    end
 
-      return a[1] < b[1]
-    end)
-
-    self.target_list_cache = M
-
-    return M
+    return list
   end
   function T:call_or_input(arg, fun, input_opts, from_input)
     if type(fun) == "string" then
@@ -145,6 +152,9 @@ function Make.setup(T)
 
     if type(cmd) == "function" then
       cmd = cmd(self)
+    end
+
+    if opts.focus_win then
     end
 
     cmd = cmd .. "\r"
@@ -213,9 +223,9 @@ function Make.setup(T)
       prompt = "Chosen Task has no Cmd",
     }, run_opts or target.run_opts, run_opts)
   end
-  function T:make(target, run_opts)
+  function T:make(target, run_opts, filter)
     self:call_or_select(target, "_make", {
-      self:target_list(),
+      self:target_list(filter),
       {
         prompt = "Run target in " .. self.title,
         format_item = self.task_choose_format,
@@ -276,6 +286,7 @@ function Make.setup(T)
     }
   end
 
+  -- TODO: dynamic target providers (eg. RustRunnables)
   if T.target_providers ~= nil then
     if type(T.target_providers) ~= "table" then
       T.target_providers = { T.target_providers }

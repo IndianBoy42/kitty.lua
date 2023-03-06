@@ -1,9 +1,9 @@
 return {
   ["make"] = function(targets, _)
-    targets.make = {
+    targets["make: <default>"] = {
       cmd = "make",
-      desc = "Run Makefile",
-      priority = 100,
+      desc = "Run make with no args ",
+      priority = 999,
     }
     targets.default = targets.make
   end,
@@ -15,7 +15,8 @@ return {
     targets["just: <default>"] = {
       cmd = "just",
       desc = "Run just with no args",
-      priority = 100,
+      priority = 999,
+      provider = "just",
     }
 
     require("kitty.make").from_command("just", { "--list" }, function(data)
@@ -26,7 +27,12 @@ return {
           local name = vim.trim(parts[1])
           if name ~= "" then
             local desc = parts[2] and vim.trim(parts[2]) or name
-            targets["just: " .. name] = { cmd = "just " .. name, desc = desc }
+            targets["just: " .. name] = {
+              cmd = "just " .. name,
+              desc = desc,
+              provider = "just",
+              priority = #lines + 2 - i,
+            }
           end
         end
       end
@@ -59,8 +65,23 @@ return {
       desc = "Run Cargo Project",
       priority = 97,
     }
+    targets.build = {
+      cmd = "cargo build --release",
+      desc = "Build Cargo Project (W/ Optimizations)",
+      priority = 96,
+    }
+    targets.test = {
+      cmd = "cargo test --release",
+      desc = "Test Cargo Project (W/ Optimizations)",
+      priority = 95,
+    }
+    targets.run = {
+      cmd = "cargo run --release",
+      desc = "Run Cargo Project (W/ Optimizations)",
+      priority = 94,
+    }
 
-    -- Make.from_command("cargo", {"--", "--list"}, parse)
+    -- TODO: any way to get a list of targets??
 
     targets.default = targets.check
   end,
