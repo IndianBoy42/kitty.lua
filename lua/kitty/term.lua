@@ -21,6 +21,57 @@ function Kitty.port_from_pid(prefix)
   return (prefix or "unix:/tmp/kitty.nvim-") .. vim.fn.getpid() .. unique_listen_on_counter
 end
 
+function Kitty:build_api_command(cmd, args_)
+  local args = { "@", "--to", self.listen_on, cmd }
+  self:append_match_args(args)
+  args = vim.list_extend(args, args_ or {})
+  return args
+end
+function Kitty:api_command(cmd, args_, on_exit, stdio)
+  return vim.loop.spawn("kitty", {
+    args = self:build_api_command(cmd, args_),
+    stdio = stdio,
+  }, function(code, signal)
+    local stdin, stdout, stderr = unpack(stdio or { nil, nil, nil })
+    if stdin then
+      stdin:close()
+    end
+    if stdout then
+      stdout:read_stop()
+      stdout:close()
+    end
+    if stderr then
+      stderr:read_stop()
+      stderr:close()
+    end
+
+    if on_exit then
+      on_exit(code, signal)
+    end
+  end)
+end
+function Kitty:api_command_blocking(cmd, args_)
+  local cmdline = self:build_api_command(cmd, args_)
+  cmdline = { "kitty", unpack(cmdline) }
+  vim.fn.system(cmdline)
+end
+local from_api_command = function(name)
+  return function(self, args_, on_exit, stdio)
+    return self:api_command(name, args_, on_exit, stdio)
+  end
+end
+local from_api_command_blocking = function(name)
+  return function(self, args_)
+    return self:api_command_blocking(name, args_)
+  end
+end
+function Kitty:append_match_args(args)
+  if self.match_arg and self.match_arg ~= "" then
+    vim.list_extend(args, { "--match", self.match_arg })
+  end
+  return args
+end
+
 function Kitty:close_on_leave(evt)
   -- FIXME: this doesn't work
   vim.api.nvim_create_autocmd(evt or "VimLeavePre", {
@@ -30,12 +81,8 @@ function Kitty:close_on_leave(evt)
     end,
   })
 end
-function Kitty:close(args_, on_exit, stdio)
-  return self:api_command("close-window", args_, on_exit, stdio)
-end
-function Kitty:close_block(args_)
-  return self:api_command_block("close-window", args_)
-end
+Kitty.close = from_api_command "close-window"
+Kitty.close_blocking = from_api_command_blocking "close-window"
 
 local function open_if_not_yet(fn)
   return function(self, args, on_exit, stdio)
@@ -153,21 +200,20 @@ function Kitty:new_overlay(o, args)
 end
 
 function Kitty:goto_layout(name, on_exit, stdio)
-  return self:api_command("goto_layout", { name }, on_exit, stdio)
-end
-function Kitty:api_kitten(args, on_exit, stdio)
-  return self:api_command("kitten", args, on_exit, stdio)
-end
-
-function Kitty:focus(dont_wait, on_exit, stdio)
-  local args = {}
-  if dont_wait then
-    args[1] = "--no-response"
+  if name == "last-used-layout" then
+    return self:api_command("last-used-layout", {}, on_exit, stdio)
   end
+
+  return self:api_command("goto-layout", { name }, on_exit, stdio)
+end
+Kitty.run_kitten = from_api_command "kitten"
+
+function Kitty:focus(on_exit, stdio)
+  local args = {}
   return self:api_command(self.is_tab and "focus-tab" or "focus-window", args, on_exit, stdio)
 end
 
-function Kitty:detach(target, dont_wait, on_exit, stdio)
+function Kitty:detach(target, on_exit, stdio)
   local args = {}
   if self.is_tab then
     args = { "detach-tab" }
@@ -179,9 +225,6 @@ function Kitty:detach(target, dont_wait, on_exit, stdio)
     if target ~= nil and target ~= "new-window" then
       vim.list_extend(args, { "--target-tab", target }) -- target should be SomeTab.match_arg
     end
-  end
-  if dont_wait then
-    args[#args + 1] = "--no-response"
   end
   return self:api_command("detach-window", args, on_exit, stdio)
 end
@@ -213,48 +256,6 @@ end
 function Kitty:send_key(text)
   print(text)
   vim.notify("Unimplemented", vim.log.levels.ERROR, {})
-end
-
-function Kitty:build_api_command(cmd, args_)
-  local args = { "@", "--to", self.listen_on, cmd }
-  self:append_match_args(args)
-  args = vim.list_extend(args, args_ or {})
-  return args
-end
-function Kitty:api_command(cmd, args_, on_exit, stdio)
-  return vim.loop.spawn("kitty", {
-    args = self:build_api_command(cmd, args_),
-    stdio = stdio,
-  }, function(code, signal)
-    local stdin, stdout, stderr = unpack(stdio or { nil, nil, nil })
-    if stdin then
-      stdin:close()
-    end
-    if stdout then
-      stdout:read_stop()
-      stdout:close()
-    end
-    if stderr then
-      stderr:read_stop()
-      stderr:close()
-    end
-
-    if on_exit then
-      on_exit(code, signal)
-    end
-  end)
-end
-function Kitty:api_command_block(cmd, args_)
-  local cmdline = self:build_api_command(cmd, args_)
-  cmdline = { "kitty", unpack(cmdline) }
-  vim.fn.system(cmdline)
-end
-
-function Kitty:append_match_args(args)
-  if self.match_arg and self.match_arg ~= "" then
-    vim.list_extend(args, { "--match", self.match_arg })
-  end
-  return args
 end
 
 -- https://sw.kovidgoyal.net/kitty/remote-control/#cmdoption-kitty-get-text-extent
