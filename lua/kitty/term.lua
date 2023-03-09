@@ -55,14 +55,25 @@ function Kitty:api_command_blocking(cmd, args_)
   cmdline = { "kitty", unpack(cmdline) }
   vim.fn.system(cmdline)
 end
-local from_api_command = function(name)
-  return function(self, args_, on_exit, stdio)
-    return self:api_command(name, args_, on_exit, stdio)
+local from_api_command = function(name, default_args)
+  default_args = default_args or {}
+  vim.validate {
+    name = { name, "string" },
+  }
+  return function(self, args, on_exit, stdio)
+    if type(args) ~= "table" then
+      args = { args }
+    end
+    args = vim.list_extend(args or {}, default_args)
+    return self:api_command(name, args, on_exit, stdio)
   end
 end
 local from_api_command_blocking = function(name)
-  return function(self, args_)
-    return self:api_command_blocking(name, args_)
+  return function(self, args)
+    if type(args) ~= "table" then
+      args = { args }
+    end
+    return self:api_command_blocking(name, args)
   end
 end
 function Kitty:append_match_args(args)
@@ -82,6 +93,7 @@ function Kitty:close_on_leave(evt)
   })
 end
 Kitty.close = from_api_command "close-window"
+Kitty.close_tab = from_api_command "close-tab"
 Kitty.close_blocking = from_api_command_blocking "close-window"
 
 local function open_if_not_yet(fn)
@@ -291,12 +303,36 @@ function Kitty:scroll(opts, on_exit, stdio)
     amount,
   }, on_exit, stdio)
 end
-function Kitty:signal_child(signal, on_exit, stdio)
-  self:api_command("signal-child", { signal }, on_exit, stdio)
+function Kitty:scroll_up(opts, on_exit, stdio)
+  return self:scroll(vim.list_extend(opts or {}, { up = 1 }), on_exit, stdio)
 end
-function Kitty:ls(on_exit, stdio)
-  self:api_command("ls", {}, on_exit, stdio)
+function Kitty:scroll_down(opts, on_exit, stdio)
+  return self:scroll(vim.list_extend(opts or {}, { down = 1 }), on_exit, stdio)
 end
+Kitty.signal_child = from_api_command "signal-child"
+function Kitty:ls(cb, on_exit, stdio)
+  local stdout
+  if stdio == nil or stdio[2] == nil then
+    stdout = vim.loop.new_pipe(false)
+    stdio = { nil, stdout, nil }
+  else
+    stdout = stdio[2]
+  end
+
+  local handle, pid = self:api_command("ls", {}, on_exit, stdio)
+  vim.loop.read_start(stdout, function(err, data)
+    if err then
+      vim.notify(err, vim.log.levels.ERROR)
+    end
+    if data then
+      if cb then
+        cb(vim.json.decode(data)) -- TODO: parse json
+      end
+    end
+  end)
+end
+Kitty.font_size = from_api_command "set-font-size"
+Kitty.set_spacing = from_api_command "set-spacing"
 
 function Kitty:set_match_arg_from_id(id)
   self.match_arg = "id:" .. id
