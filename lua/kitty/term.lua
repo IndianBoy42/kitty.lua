@@ -96,8 +96,14 @@ Kitty.close = from_api_command "close-window"
 Kitty.close_tab = from_api_command "close-tab"
 Kitty.close_blocking = from_api_command_blocking "close-window"
 
+-- TODO: make this smarter?
 local function open_if_not_yet(fn)
   return function(self, args, on_exit, stdio)
+    self:ls(nil, function(code, _)
+      if code == 0 then
+        self.is_opened = true
+      end
+    end)
     if self.is_opened then
       return
     end
