@@ -1,5 +1,9 @@
 local K = {}
+local defaults = {}
+
 K.setup = function(cfg)
+  cfg = vim.tbl_extend("keep", cfg or {}, defaults)
+
   local Term = require "kitty.term"
   local KT
   if cfg.from_current_win then
@@ -8,6 +12,7 @@ K.setup = function(cfg)
   else
     KT = Term:new(cfg)
   end
+  K.instance = KT
 
   -- Create the illusion of the global singleton, so can use . rather than :
   setmetatable(K, {

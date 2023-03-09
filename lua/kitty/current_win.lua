@@ -7,6 +7,7 @@ K.setup = function(cfg)
 
   local Term = require "kitty.term"
   local KT = Term:new(cfg)
+  K.instance = KT
 
   -- Create the illusion of the global singleton, so can use . rather than :
   setmetatable(K, {
