@@ -2,7 +2,7 @@
 local titles = {}
 local Kitty = {
   title = "Kitty.nvim",
-  listen_on = "unix:/tmp/kitty.nvim",
+  listen_on = "unique_port",
   default_launch_location = "tab",
   is_tab = false,
   launch_counter = 0,
