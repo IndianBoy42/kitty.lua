@@ -77,7 +77,7 @@ function Kitty:close_on_leave(evt)
   vim.api.nvim_create_autocmd(evt or "VimLeavePre", {
     callback = function()
       print "bye bye kitty!"
-      self:close_window(nil, nil, true)
+      self:close_blocking()
     end,
   })
 end
