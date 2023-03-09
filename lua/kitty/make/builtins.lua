@@ -41,7 +41,7 @@ return {
     targets.default = targets.just_default
   end,
   ["cargo"] = function(targets)
-    if not vim.fn.filereadable "Cargo.toml" or not vim.fn.executable "cargo" then
+    if vim.fn.filereadable "Cargo.toml" ~= 0 or vim.fn.executable "cargo" ~= 0 then
       return
     end
 
