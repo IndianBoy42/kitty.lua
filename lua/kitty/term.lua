@@ -129,10 +129,15 @@ Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
     unpack(args_ or {}),
   }
 
-  vim.loop.spawn("kitty", {
+  local handle, pid = vim.loop.spawn("kitty", {
     args = args,
     stdio = stdio,
   }, on_exit)
+
+  -- self:set_match_arg_from_pid(pid) -- FIXME: this doesn't work?
+  self:set_match_arg_from_id(1)
+
+  return handle, pid
 end)
 
 Kitty.to_arg = setmetatable({}, {
@@ -163,7 +168,9 @@ function Kitty:sub_window(o, where)
   o.is_opened = false
 
   local Sub = self:new(o)
-  Sub.match_arg = "title:" .. Sub.title
+  Sub:set_match_arg {
+    title = Sub.title,
+  }
 
   Sub.launch_args = {
     "--window-title",
@@ -358,11 +365,21 @@ end
 Kitty.font_size = from_api_command "set-font-size"
 Kitty.set_spacing = from_api_command "set-spacing"
 
+function Kitty:set_match_arg(opts)
+  if type(opts) == "string" then
+    self.match_arg = opts
+    return
+  end
+  for k, v in pairs(opts) do
+    self.match_arg = k .. ":" .. tostring(v)
+  end
+end
 function Kitty:set_match_arg_from_id(id)
-  self.match_arg = "id:" .. id
+  self:set_match_arg { id = id }
 end
 function Kitty:set_match_arg_from_pid(pid)
-  self.match_arg = "pid:" .. pid
+  -- FIXME: I dont think pid match_arg works
+  self:set_match_arg { pid = pid }
 end
 function Kitty:universal()
   return self:new { match_arg = "" }
@@ -371,7 +388,7 @@ function Kitty:recent(i)
   return self:new { match_arg = "recent:" .. (i or 0) }
 end
 function Kitty:current_tab()
-  return self:new { match_arg = "", is_tab = self.is_tab }
+  return self:new { is_tab = self.is_tab }
 end
 
 function Kitty:new(o)
