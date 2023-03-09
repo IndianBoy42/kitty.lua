@@ -175,7 +175,25 @@ function Kitty:sub_window(o, where)
     sub.launch_args = vim.list_extend(sub.launch_args, args_ or {})
 
     -- vim.notify("Unimplemented", vim.log.levels.ERROR, {})
-    return self:api_command("launch", sub.launch_args, on_exit, stdio)
+    local stdout
+    if stdio == nil or stdio[2] == nil then
+      stdout = vim.loop.new_pipe(false)
+      stdio = { nil, stdout, nil }
+    else
+      stdout = stdio[2]
+    end
+
+    local ret = { self:api_command("launch", sub.launch_args, on_exit, stdio) }
+
+    vim.loop.read_start(stdout, function(err, data)
+      if err then
+        vim.notify("Error launching Kitty: " .. err, vim.log.levels.ERROR, {})
+      end
+      if data then
+        sub:set_match_arg_from_id(data)
+      end
+    end)
+    return unpack(ret)
   end)
 
   return Sub
