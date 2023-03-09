@@ -42,9 +42,8 @@ function Make.setup(T)
     last_manual = { desc = "Last Run Command" },
     last = { desc = "Last Run Task" },
     -- on_save = { desc = "Will Run on Save" }, -- TODO: auto_on_save commands
-    -- TODO: combo tasks
+    -- TODO: combo tasks: pre and post
   }
-  T.focus_me = T.focus_me or false
   T.select = T.select or vim.ui.select
   T.input = T.input or vim.ui.input
   T.shell = T.shell or vim.o.shell
@@ -94,7 +93,7 @@ function Make.setup(T)
 
     return list
   end
-  function T:call_or_input(arg, fun, input_opts, from_input)
+  function T:call_or_input(arg, fun, input_opts, from_input, ...)
     if type(fun) == "string" then
       fun = self[fun]
     end
@@ -106,14 +105,15 @@ function Make.setup(T)
       end
 
       from_input = from_input or nop
+      local extra_args = { ... }
       self.input(opts, function(i)
-        fun(self, from_input(i))
+        fun(self, from_input(i), unpack(extra_args))
       end)
     else
-      fun(self, arg)
+      fun(self, arg, ...)
     end
   end
-  function T:call_or_select(arg, fun, choices, from_input)
+  function T:call_or_select(arg, fun, choices, from_input, ...)
     if type(fun) == "string" then
       fun = self[fun]
     end
@@ -124,12 +124,13 @@ function Make.setup(T)
         opts = choices(self)
       end
 
+      local extra_args = { ... }
       self.select(opts[1], opts[2], function(i)
         from_input = from_input or nop
-        fun(self, from_input(i))
+        fun(self, from_input(i), unpack(extra_args))
       end)
     else
-      fun(self, arg)
+      fun(self, arg, ...)
     end
   end
   function T:_add_target_provider(provider)
@@ -149,19 +150,20 @@ function Make.setup(T)
   end
   function T:_run(cmd, opts)
     opts = opts or self.default_run_opts
+    utils.dump(opts)
 
     if type(cmd) == "function" then
       cmd = cmd(self)
     end
 
-    if opts.focus_win then
-    end
-
     cmd = cmd .. "\r"
     if opts.launch_new then
-      return self:launch({}, opts.launch_new, { self.shell, "-c", cmd })
+      return self:launch({ focus_on_open = opts.focus_win }, opts.launch_new, { self.shell, "-c", cmd })
     else
       self:send(cmd)
+      if opts.focus_win then
+        self:focus()
+      end
     end
     -- TODO: can notify on finish?
   end
@@ -177,8 +179,9 @@ function Make.setup(T)
         if remember_cmd then
           remember_cmd(i)
         end
-        return i, run_opts
-      end
+        return i
+      end,
+      run_opts
     )
   end
   function T:run(cmd, input_opts, run_opts, remember_cmd)
@@ -214,14 +217,21 @@ function Make.setup(T)
     })
   end
   function T:_make(target, run_opts)
+    local target_name = target
     if type(target) == "string" then
       target = self.targets[target]
+      if not target then
+        vim.notify("No such target: " .. target, vim.log.levels.ERROR)
+      end
     end
     local cmd = target.cmd or target[2].cmd
+    if not cmd then
+      vim.notify("No command associated: " .. target_name, vim.log.levels.ERROR)
+    end
     self.targets.last.cmd = cmd
     self:run_cmd(cmd, {
       prompt = "Chosen Task has no Cmd",
-    }, run_opts or target.run_opts, run_opts)
+    }, run_opts or target.run_opts)
   end
   function T:make(target, run_opts, filter)
     self:call_or_select(target, "_make", {
@@ -231,8 +241,8 @@ function Make.setup(T)
         format_item = self.task_choose_format,
       },
     }, function(i)
-      return (i or "default"), run_opts
-    end)
+      return i or "default"
+    end, run_opts)
   end
   function T:make_default(run_opts)
     self:make("default", run_opts)
@@ -255,10 +265,10 @@ function Make.setup(T)
         prompt = "Name: ",
         default = "default",
       }, function(name_)
-        return name_, target_, run_opts
-      end)
+        return name_
+      end, target_, run_opts)
     end
-    self:call_or_input(target, "_add_target", {
+    self:call_or_input(target, "_add_target2", {
       prompt = "Cmd: ",
     })
     -- self.targets[name] = type(target) == "table" and target or { cmd = target, desc = name }
@@ -272,16 +282,14 @@ function Make.setup(T)
     self.target_list_cache = nil
   end
   function T:target_from_last_manual(name, run_opts)
-    self:call_or_input(name, "_add_target", { prompt = "Name" }, function(i)
-      return i, vim.deepcopy(self.targets.last_manual), run_opts
-    end)
+    self:call_or_input(name, "_add_target", { prompt = "Name" }, nil, vim.deepcopy(self.targets.last_manual), run_opts)
   end
 
-  function T:rust_tools_executor(opts)
-    opts = opts or T.default_run_opts
+  function T:rust_tools_executor(run_opts)
+    run_opts = run_opts or T.default_run_opts
     return {
       execute_command = function(command, args, cwd)
-        self:_run("cd " .. cwd .. " && " .. command .. " " .. table.concat(args, " "), opts)
+        self:_run("cd " .. cwd .. " && " .. command .. " " .. table.concat(args, " "), run_opts)
       end,
     }
   end
