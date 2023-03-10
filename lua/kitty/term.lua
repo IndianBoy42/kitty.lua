@@ -124,10 +124,44 @@ Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
     "env=NVIM_LISTEN_ADDRESS=" .. vim.v.servername,
     "--listen-on",
     self.listen_on,
-    "--title",
-    self.title,
-    unpack(args_ or {}),
   }
+  if self.title then
+    args[#args + 1] = "--title"
+    args[#args + 1] = self.title
+  end
+  if self.focus_on_open then
+    -- TODO: Sub.focus_on_open and "" or "--dont-take-focus",
+  end
+  if self.open_cwd then
+    args[#args + 1] = "--directory"
+    args[#args + 1] = self.open_cwd
+  end
+  if self.keep_open then
+    args[#args + 1] = "--hold"
+  end
+  if not self.dont_detach then
+    args[#args + 1] = "--detach"
+  end
+  if self.open_session then
+    args[#args + 1] = "--session"
+    args[#args + 1] = self.open_session
+  end
+  if self.open_window_as then
+    args[#args + 1] = "--start-as"
+    args[#args + 1] = self.open_window_as
+  end
+  if self.open_wm_class then
+    if type(self.open_wm_class) == "string" then
+      args[#args + 1] = "--class"
+      args[#args + 1] = self.open_wm_class
+    else
+      args[#args + 1] = "--class"
+      args[#args + 1] = self.open_wm_class.class or self.open_wm_class[1]
+      args[#args + 1] = "--name"
+      args[#args + 1] = self.open_wm_class.name or self.open_wm_class[2]
+    end
+  end
+  vim.list_extend(args, args_)
 
   local handle, pid = vim.loop.spawn("kitty", {
     args = args,
@@ -172,6 +206,10 @@ function Kitty:sub_window(o, where)
     title = Sub.title,
   }
 
+  local open_cwd = Sub.open_cwd
+  if open_cwd == nil or open_cwd == "" then
+    open_cwd = "current"
+  end
   Sub.launch_args = {
     "--window-title",
     Sub.title,
@@ -181,11 +219,31 @@ function Kitty:sub_window(o, where)
     where,
     "--env",
     "NVIM_LISTEN_ADDRESS=" .. vim.v.servername,
-    Sub.focus_on_open and "" or "--dont-take-focus",
+    "--cwd",
+    open_cwd,
   }
+  if not Sub.focus_on_open then
+    Sub.launch_args[#Sub.launch_args + 1] = "--dont-take-focus"
+  end
+  if Sub.keep_open then
+    Sub.launch_args[#Sub.launch_args + 1] = "--hold"
+  end
+  if Sub.split_location then
+    Sub.launch_args[#Sub.launch_args + 1] = "--location"
+    Sub.launch_args[#Sub.launch_args + 1] = Sub.split_location
+  end
+  if Sub.stdin_source then
+    Sub.launch_args[#Sub.launch_args + 1] = "--stdin-source"
+    Sub.launch_args[#Sub.launch_args + 1] = Sub.stdin_source
+  end
 
   Sub.open = open_if_not_yet(function(sub, args_, on_exit, stdio)
-    sub.launch_args = vim.list_extend(sub.launch_args, args_ or {})
+    if type(args_) == "string" then
+      args_ = { args_ }
+    end
+    if args_ then
+      sub.launch_args = vim.list_extend(sub.launch_args, args_)
+    end
 
     -- vim.notify("Unimplemented", vim.log.levels.ERROR, {})
     local stdout
@@ -255,7 +313,14 @@ function Kitty:focus(on_exit, stdio)
   local args = {}
   return self:api_command(self.is_tab and "focus-tab" or "focus-window", args, on_exit, stdio)
 end
-
+Kitty.resize_os_window = from_api_command "resize-os-window"
+Kitty.resize_window = from_api_command "resize-window"
+Kitty.reset_layout = from_api_command("resize-window", { "--axis", "reset" })
+Kitty.toggle_fullscreen = from_api_command("resize-os-window", { "--action", "toggle-fullscreen" })
+Kitty.toggle_maximized = from_api_command("resize-os-window", { "--action", "toggle-maximized" })
+function Kitty:toggle_fullscreen(on_exit, stdio)
+  self:resize_os_window({}, on_exit, stdio)
+end
 function Kitty:detach(target, on_exit, stdio)
   local args = {}
   if self.is_tab then
