@@ -27,4 +27,14 @@ M.stdin_source = {
   selection = "@selection",
   none = "none",
 }
+M.launch_type = {
+  window = "window",
+  tab = "tab",
+  os_window = "os-window",
+  overlay = "overlay",
+  overlay_main = "overlay-main",
+  background = "background",
+  clipboard = "clipboard",
+  primary = "primary",
+}
 return M
