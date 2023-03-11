@@ -148,44 +148,40 @@ function Make.setup(T)
   function T:last_cmd()
     return self.cmd_history[#self.cmd_history]
   end
-  function T:_run(cmd, opts)
-    opts = opts or self.default_run_opts
-    utils.dump(opts)
+  function T:_run(cmd, run_opts)
+    run_opts = run_opts or self.default_run_opts
 
     if type(cmd) == "function" then
       cmd = cmd(self)
     end
 
     cmd = cmd .. "\r"
-    if opts.launch_new then
-      return self:launch({ focus_on_open = opts.focus_win }, opts.launch_new, { self.shell, "-c", cmd })
+    if run_opts.launch_new then
+      return self:launch({
+        focus_on_open = run_opts.focus_on_open,
+        keep_open = run_opts.keep_open,
+      }, run_opts.launch_new, { self.shell, "-c", cmd })
     else
       self:send(cmd)
-      if opts.focus_win then
+      if run_opts.focus_on_open then
         self:focus()
       end
     end
     -- TODO: can notify on finish?
   end
-  function T:run_cmd(cmd, input_opts, run_opts, remember_cmd)
-    self:call_or_input(
-      cmd,
-      "_run",
-      vim.tbl_extend("force", {
-        prompt = "Run in " .. self.title,
-        default = self:last_cmd(),
-      }, input_opts or {}),
-      function(i)
-        if remember_cmd then
-          remember_cmd(i)
-        end
-        return i
-      end,
-      run_opts
-    )
+  function T:run_cmd(cmd, run_opts, remember_cmd)
+    self:call_or_input(cmd, "_run", {
+      prompt = "Run in " .. self.title,
+      default = self:last_cmd(),
+    }, function(i)
+      if remember_cmd then
+        remember_cmd(i)
+      end
+      return i
+    end, run_opts)
   end
-  function T:run(cmd, input_opts, run_opts, remember_cmd)
-    self:run_cmd(cmd, input_opts, run_opts, function(i)
+  function T:run(cmd, run_opts, remember_cmd)
+    self:run_cmd(cmd, run_opts, function(i)
       if remember_cmd then
         remember_cmd(i)
       end
@@ -289,7 +285,10 @@ function Make.setup(T)
     run_opts = run_opts or T.default_run_opts
     return {
       execute_command = function(command, args, cwd)
-        self:_run("cd " .. cwd .. " && " .. command .. " " .. table.concat(args, " "), run_opts)
+        local cmd = "cd " .. cwd .. " && " .. command .. " " .. table.concat(args, " ")
+        self.targets.last.cmd = cmd
+        -- TODO: add this to the list of targets
+        self:run(cmd, nil, run_opts)
       end,
     }
   end

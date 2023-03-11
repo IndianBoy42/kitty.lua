@@ -28,8 +28,9 @@ function Kitty:build_api_command(cmd, args_)
   return args
 end
 function Kitty:api_command(cmd, args_, on_exit, stdio)
+  local spawn_args = self:build_api_command(cmd, args_)
   return vim.loop.spawn("kitty", {
-    args = self:build_api_command(cmd, args_),
+    args = spawn_args,
     stdio = stdio,
   }, function(code, signal)
     local stdin, stdout, stderr = unpack(stdio or { nil, nil, nil })
@@ -84,10 +85,9 @@ function Kitty:append_match_args(args)
 end
 
 function Kitty:close_on_leave(evt)
-  -- FIXME: this doesn't work
   vim.api.nvim_create_autocmd(evt or "VimLeavePre", {
     callback = function()
-      print "bye bye kitty!"
+      vim.notify("Closing Kitty: " .. self.title, vim.log.levels.INFO)
       self:close_blocking()
     end,
   })
@@ -99,11 +99,6 @@ Kitty.close_blocking = from_api_command_blocking "close-window"
 -- TODO: make this smarter?
 local function open_if_not_yet(fn)
   return function(self, args, on_exit, stdio)
-    self:ls(nil, function(code, _)
-      if code == 0 then
-        self.is_opened = true
-      end
-    end)
     if self.is_opened then
       return
     end
@@ -117,14 +112,33 @@ local function open_if_not_yet(fn)
   end
 end
 
+function Kitty:nvim_env_injections()
+  return {
+    NVIM_LISTEN_ADDRESS = vim.v.servername,
+    NVIM = vim.v.servername,
+    NVIM_PID = vim.fn.getpid(),
+  }
+end
+
 Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
+  self:ls(nil, function(code, _)
+    if code == 0 then
+      return
+    end
+  end)
+
   local args = {
-    "-o",
-    -- "allow_remote_control=yes",
-    "env=NVIM_LISTEN_ADDRESS=" .. vim.v.servername,
     "--listen-on",
     self.listen_on,
+    "--override",
+    "allow_remote_control=yes",
   }
+  local env = Kitty:nvim_env_injections()
+  if env then
+    for k, v in pairs(env) do
+      args[#args + 1] = "env=" .. k .. "=" .. v
+    end
+  end
   if self.title then
     args[#args + 1] = "--title"
     args[#args + 1] = self.title
@@ -161,12 +175,36 @@ Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
       args[#args + 1] = self.open_wm_class.name or self.open_wm_class[2]
     end
   end
-  vim.list_extend(args, args_)
+  if self.open_layout then
+    args[#args + 1] = "--override"
+    args[#args + 1] = "enabled_layouts='" .. self.open_layout .. ",*'"
+  end
+  if args_ then
+    vim.list_extend(args, args_)
+  elseif self.launch_cmd then
+    if type(self.launch_cmd) == "string" then
+      self.launch_cmd = { self.launch_cmd }
+    end
+    vim.list_extend(args, self.launch_cmd)
+  end
 
+  -- TODO: use jobstart?
   local handle, pid = vim.loop.spawn("kitty", {
     args = args,
     stdio = stdio,
-  }, on_exit)
+  }, function(code, signal)
+    self.is_opened = false
+
+    if code == 0 then
+      if not self.dont_close_on_leave then
+        self:close_on_leave()
+      end
+    end
+
+    if on_exit then
+      on_exit(code, signal)
+    end
+  end)
 
   -- self:set_match_arg_from_pid(pid) -- FIXME: this doesn't work?
   self:set_match_arg_from_id(1)
@@ -192,7 +230,7 @@ function Kitty:sub_window(o, where)
   where = where or self.default_launch_location
 
   o = o or {}
-  print(o.title, self.title)
+  o.listen_on = self.listen_on
   if o.title == nil or o.title == self.title then
     o.title = self.title .. "-" .. self.launch_counter
     self.launch_counter = self.launch_counter + 1
@@ -200,9 +238,13 @@ function Kitty:sub_window(o, where)
   o.attach_to_current_win = false
   o.from_id = nil
   o.is_opened = false
+  vim.tbl_extend("keep", o, {
+    default_launch_location = self.default_launch_location,
+  })
 
+  -- TODO: should this really be a subclass? not all properties should be inherited... should any at all?
   local Sub = self:new(o)
-  Sub:set_match_arg {
+  Sub:set_match_arg { -- TODO: using title is kinda brittle
     title = Sub.title,
   }
 
@@ -217,11 +259,16 @@ function Kitty:sub_window(o, where)
     Sub.title,
     "--type",
     where,
-    "--env",
-    "NVIM_LISTEN_ADDRESS=" .. vim.v.servername,
     "--cwd",
     open_cwd,
   }
+  local env = Sub:nvim_env_injections()
+  if env then
+    for k, v in pairs(env) do
+      Sub.launch_args[#Sub.launch_args + 1] = "--env"
+      Sub.launch_args[#Sub.launch_args + 1] = k .. "=" .. v
+    end
+  end
   if not Sub.focus_on_open then
     Sub.launch_args[#Sub.launch_args + 1] = "--dont-take-focus"
   end
@@ -238,7 +285,9 @@ function Kitty:sub_window(o, where)
   end
 
   Sub.open = open_if_not_yet(function(sub, args_, on_exit, stdio)
-    if type(args_) == "string" then
+    if not args_ and sub.launch_cmd then
+      args_ = { sub.launch_cmd }
+    elseif type(args_) == "string" then
       args_ = { args_ }
     end
     if args_ then
@@ -277,26 +326,49 @@ end
 
 --https://sw.kovidgoyal.net/kitty/remote-control/#cmdoption-kitty-launch-type
 function Kitty:new_tab(o, args)
+  if type(o) == "string" and args == nil then
+    args = { o }
+  end
   return self:launch(o, "tab", args)
 end
 function Kitty:new_window(o, args)
+  if type(o) == "string" and args == nil then
+    args = { o }
+  end
   return self:launch(o, "window", args)
 end
 function Kitty:new_hsplit(o, args)
-  args = args or {}
-  args[#args + 1] = "--location=hsplit"
+  self:goto_layout "splits"
+  if type(o) == "string" and args == nil then
+    args = { o }
+  end
+  if type(args) == "string" then
+    args = { args }
+  end
+  args = vim.list_extend({ "--location=hsplit" }, args or {})
   return self:launch(o, "window", args)
 end
 function Kitty:new_vsplit(o, args)
   self:goto_layout "splits"
-  args = args or {}
-  args[#args + 1] = "--location=vsplit"
+  if type(o) == "string" and args == nil then
+    args = { o }
+  end
+  if type(args) == "string" then
+    args = { args }
+  end
+  args = vim.list_extend({ "--location=vsplit" }, args or {})
   return self:launch(o, "window", args)
 end
 function Kitty:new_os_window(o, args)
+  if type(o) == "string" and args == nil then
+    args = { o }
+  end
   return self:launch(o, "os-window", args)
 end
 function Kitty:new_overlay(o, args)
+  if type(o) == "string" and args == nil then
+    args = { o }
+  end
   return self:launch(o, "overlay", args)
 end
 
@@ -428,6 +500,8 @@ function Kitty:ls(cb, on_exit, stdio)
   end)
 end
 Kitty.font_size = from_api_command "set-font-size"
+Kitty.font_up = from_api_command("set-font-size", { "--", "+1" })
+Kitty.font_down = from_api_command("set-font-size", { "--", "-1" })
 Kitty.set_spacing = from_api_command "set-spacing"
 
 function Kitty:set_match_arg(opts)
