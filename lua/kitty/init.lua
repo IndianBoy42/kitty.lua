@@ -4,13 +4,12 @@ local defaults = {}
 K.setup = function(cfg)
   cfg = vim.tbl_extend("keep", cfg or {}, defaults)
 
-  local Term = require "kitty.term"
   local KT
   if cfg.from_current_win then
     local CW = require("kitty.current_win").setup()
-    KT = CW:sub_window(cfg, cfg.from_current_win)
+    KT = CW.sub_window(cfg, cfg.from_current_win)
   else
-    KT = Term:new(cfg)
+    KT = require("kitty.term"):new(cfg)
   end
   K.instance = KT
 
@@ -29,6 +28,11 @@ K.setup = function(cfg)
       end
     end,
   })
+
+  K.setup = function(_)
+    return K
+  end
+
   return K
 end
 return K
