@@ -85,12 +85,16 @@ function Kitty:append_match_args(args)
 end
 
 function Kitty:close_on_leave(evt)
-  vim.api.nvim_create_autocmd(evt or "VimLeavePre", {
-    callback = function()
-      vim.notify("Closing Kitty: " .. self.title, vim.log.levels.INFO)
-      self:close_blocking()
-    end,
-  })
+  vim.schedule(function()
+    vim.api.nvim_create_autocmd(evt or "VimLeavePre", {
+      callback = function()
+        -- vim.schedule_wrap(function()
+        vim.notify("Closing Kitty: " .. self.title, vim.log.levels.INFO)
+        self:close_blocking()
+        -- end)
+      end,
+    })
+  end)
 end
 Kitty.close = from_api_command "close-window"
 Kitty.close_tab = from_api_command "close-tab"
@@ -136,6 +140,7 @@ Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
   local env = Kitty:nvim_env_injections()
   if env then
     for k, v in pairs(env) do
+      args[#args + 1] = "--override"
       args[#args + 1] = "env=" .. k .. "=" .. v
     end
   end

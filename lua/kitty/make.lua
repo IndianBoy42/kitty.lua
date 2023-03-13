@@ -158,12 +158,12 @@ function Make.setup(T)
     cmd = cmd .. "\r"
     if run_opts.launch_new then
       return self:launch({
-        focus_on_open = run_opts.focus_on_open,
+        focus_on_run = run_opts.focus_on_run,
         keep_open = run_opts.keep_open,
       }, run_opts.launch_new, { self.shell, "-c", cmd })
     else
       self:send(cmd)
-      if run_opts.focus_on_open then
+      if run_opts.focus_on_run then
         self:focus()
       end
     end
@@ -220,11 +220,16 @@ function Make.setup(T)
         vim.notify("No such target: " .. target, vim.log.levels.ERROR)
       end
     end
-    local cmd = target.cmd or target[2].cmd
+    if target.cmd then
+    elseif target[2].cmd then
+      target = target[2]
+    end
+    local cmd = target.cmd
     if not cmd then
       vim.notify("No command associated: " .. target_name, vim.log.levels.ERROR)
     end
     self.targets.last.cmd = cmd
+    -- TODO: run dependencies
     self:run_cmd(cmd, {
       prompt = "Chosen Task has no Cmd",
     }, run_opts or target.run_opts)
@@ -292,6 +297,20 @@ function Make.setup(T)
       end,
     }
   end
+  function T:make_cmd(name)
+    vim.api.nvim_create_user_command(name, function(args)
+      if #args.fargs == 0 then
+        self:make "default"
+      else
+        self:make(args.fargs[1])
+      end
+    end, {
+      nargs = "?",
+      complete = function()
+        return vim.tbl_keys(self.targets)
+      end,
+    })
+  end
 
   -- TODO: dynamic target providers (eg. RustRunnables)
   if T.target_providers ~= nil then
@@ -302,6 +321,8 @@ function Make.setup(T)
       T:_add_target_provider(v)
     end
   end
+
+  -- TODO: null-ls integration to match output of commands
 end
 
 return Make

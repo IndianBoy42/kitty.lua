@@ -8,7 +8,7 @@ return {
     targets.default = targets.make
   end,
   ["just"] = function(targets, _)
-    if not vim.fn.executable "just" then
+    if vim.fn.executable "just" == 0 then
       return
     end
 
@@ -41,7 +41,7 @@ return {
     targets.default = targets.just_default
   end,
   ["cargo"] = function(targets)
-    if vim.fn.filereadable "Cargo.toml" ~= 0 or vim.fn.executable "cargo" ~= 0 then
+    if vim.fn.filereadable "Cargo.toml" == 0 or vim.fn.executable "cargo" == 0 then
       return
     end
 
@@ -84,5 +84,13 @@ return {
     -- TODO: any way to get a list of targets??
 
     targets.default = targets.check
+  end,
+  ["vscode"] = function(targets)
+    if vim.fn.filereadable "tasks.json" == 0 and vim.fn.filereadable "launch.json" == 0 then
+      return
+    end
+    -- TODO: https://code.visualstudio.com/docs/editor/tasks
+    local tasks = vim.json.decode(io.open("tasks.json", "r"):read "*a").tasks
+    local launch = vim.json.decode(io.open("launch.json", "r"):read "*a").configurations
   end,
 }
