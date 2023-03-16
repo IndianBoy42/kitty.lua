@@ -65,17 +65,17 @@ return {
       desc = "Run Cargo Project",
       priority = 97,
     }
-    targets.build = {
+    targets.release_build = {
       cmd = "cargo build --release",
       desc = "Build Cargo Project (W/ Optimizations)",
       priority = 96,
     }
-    targets.test = {
+    targets.release_test = {
       cmd = "cargo test --release",
       desc = "Test Cargo Project (W/ Optimizations)",
       priority = 95,
     }
-    targets.run = {
+    targets.release_run = {
       cmd = "cargo run --release",
       desc = "Run Cargo Project (W/ Optimizations)",
       priority = 94,
