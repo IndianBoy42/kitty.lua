@@ -21,35 +21,60 @@ function Kitty.port_from_pid(prefix)
   return (prefix or "unix:/tmp/kitty.nvim-") .. vim.fn.getpid() .. unique_listen_on_counter
 end
 
+local api_commands_no_match = {
+  "set-font-size",
+  "ls",
+}
+
 function Kitty:build_api_command(cmd, args_)
   local args = { "@", "--to", self.listen_on, cmd }
-  self:append_match_args(args)
+  if not vim.tbl_contains(api_commands_no_match, cmd) then
+    self:append_match_args(args)
+  end
   args = vim.list_extend(args, args_ or {})
   return args
 end
 function Kitty:api_command(cmd, args_, on_exit, stdio)
   local spawn_args = self:build_api_command(cmd, args_)
-  return vim.loop.spawn("kitty", {
+  stdio = stdio or { nil, nil, nil }
+  if not stdio[3] then -- stderr
+    stdio[3] = vim.loop.new_pipe(false)
+  end
+  local handle, pid = vim.loop.spawn("kitty", {
     args = spawn_args,
     stdio = stdio,
   }, function(code, signal)
-    local stdin, stdout, stderr = unpack(stdio or { nil, nil, nil })
-    if stdin then
-      stdin:close()
-    end
-    if stdout then
-      stdout:read_stop()
-      stdout:close()
-    end
-    if stderr then
-      stderr:read_stop()
-      stderr:close()
+    if stdio then
+      local stdin, stdout, stderr = unpack(stdio)
+      if stdin then
+        stdin:close()
+      end
+      if stdout then
+        stdout:read_stop()
+        stdout:close()
+      end
+      if stderr then
+        stderr:read_stop()
+        stderr:close()
+      end
     end
 
     if on_exit then
       on_exit(code, signal)
     end
   end)
+
+  stdio[3]:read_start(function(err, data)
+    if err then
+      error(err)
+    end
+    if data then
+      vim.notify("Kitty: " .. data, vim.log.levels.ERROR)
+      vim.notify("From: " .. cmd .. " - " .. table.concat(spawn_args, " "), vim.log.levels.WARN)
+    end
+  end)
+
+  return handle, pid
 end
 function Kitty:api_command_blocking(cmd, args_)
   local cmdline = self:build_api_command(cmd, args_)
@@ -104,6 +129,7 @@ Kitty.close_blocking = from_api_command_blocking "close-window"
 local function open_if_not_yet(fn)
   return function(self, args, on_exit, stdio)
     if self.is_opened then
+      self:focus()
       return
     end
 
@@ -125,11 +151,11 @@ function Kitty:nvim_env_injections()
 end
 
 Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
-  self:ls(nil, function(code, _)
-    if code == 0 then
-      return
-    end
-  end)
+  -- self:ls(nil, function(code, _)
+  --   if code == 0 then
+  --     return
+  --   end
+  -- end)
 
   local args = {
     "--listen-on",
@@ -310,7 +336,7 @@ function Kitty:sub_window(o, where)
 
     local ret = { self:api_command("launch", sub.launch_args, on_exit, stdio) }
 
-    vim.loop.read_start(stdout, function(err, data)
+    stdout:read_start(function(err, data)
       if err then
         vim.notify("Error launching Kitty: " .. err, vim.log.levels.ERROR, {})
       end
@@ -444,11 +470,22 @@ function Kitty:send_key(text)
 end
 
 -- https://sw.kovidgoyal.net/kitty/remote-control/#cmdoption-kitty-get-text-extent
-function Kitty:get_text(extent, with_text, on_exit)
+function Kitty:get_text(extent, with_text, args, on_exit)
+  if not with_text then
+    with_text = function(data)
+      vim.cmd.split()
+      vim.cmd.enew()
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(data, "\n"))
+    end
+  end
+  if not with_text then
+    error "with_text is required"
+    return
+  end
   local stdout = vim.loop.new_pipe(false)
-  self:api_command("get-text", { "--extent", (extent or "screen") }, on_exit)
+  self:api_command("get-text", vim.list_extend({ "--extent", (extent or "screen") }, args or {}), on_exit)
 
-  vim.loop.read_start(stdout, function(err, data)
+  stdout:read_start(function(err, data)
     if err then
       vim.notify(err, vim.log.levels.ERROR)
     end
@@ -456,6 +493,11 @@ function Kitty:get_text(extent, with_text, on_exit)
       with_text(data)
     end
   end)
+end
+function Kitty:get_selection(reg)
+  self:get_text("selection", function(data)
+    vim.fn.setreg(reg, data)
+  end, {})
 end
 
 function Kitty:scroll(opts, on_exit, stdio)
@@ -493,16 +535,18 @@ function Kitty:ls(cb, on_exit, stdio)
   end
 
   local handle, pid = self:api_command("ls", {}, on_exit, stdio)
-  vim.loop.read_start(stdout, function(err, data)
+  stdout:read_start(function(err, data)
     if err then
       vim.notify(err, vim.log.levels.ERROR)
     end
     if data then
       if cb then
-        cb(vim.json.decode(data)) -- TODO: parse json
+        local decoded = vim.json.decode(data)
+        cb(decoded)
       end
     end
   end)
+  return handle, pid
 end
 Kitty.font_size = from_api_command "set-font-size"
 Kitty.font_up = from_api_command("set-font-size", { "--", "+1" })

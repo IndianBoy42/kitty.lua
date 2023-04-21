@@ -25,28 +25,22 @@ K.setup = function(cfg)
     end,
   })
 
-  K.font_up = function()
-    K.font_size "+1"
-  end
-  K.font_down = function()
-    K.font_size "-1"
-  end
-
   -- TODO: mirror guifont? guifb, guibg
+  local guifontsize = function()
+    local font = vim.o.guifont
+    local size = font:match ":h%d+"
+    if size then
+      K.font_size(size:sub(3))
+    end
+  end
   vim.api.nvim_create_user_command("KittyFontSize", function(a)
     K.font_size(a.args)
   end, { nargs = "?" })
-  vim.api.nvim_create_user_command("KittyFontUp", K.font_down, {})
-  vim.api.nvim_create_user_command("KittyFontDown", K.font_up, {})
+  vim.api.nvim_create_user_command("KittyFontUp", K.font_up, {})
+  vim.api.nvim_create_user_command("KittyFontDown", K.font_down, {})
   vim.api.nvim_create_autocmd("OptionSet", {
     pattern = "guifont",
-    callback = function()
-      local font = vim.o.guifont
-      local size = font:match "%d+$"
-      if size then
-        K.font_size(size)
-      end
-    end,
+    callback = guifontsize,
   })
 
   K.setup = function(_)
