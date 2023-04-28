@@ -1,5 +1,6 @@
 local K = {}
 local defaults = {
+  title = "Kitty-current-win",
   attach_to_current_win = true,
 }
 K.setup = function(cfg)

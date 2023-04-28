@@ -1,85 +1,23 @@
 -- https://sw.kovidgoyal.net/kitty/remote-control/
 local titles = {}
+local kutils = require "kitty.utils"
 local Kitty = {
   title = "Kitty.nvim",
-  listen_on = "unique_port",
+  listen_on = kutils.port_from_pid,
   default_launch_location = "tab",
   is_tab = false,
   launch_counter = 0,
   from_id = 1,
 }
--- Use this to control the window that neovim is inside
-function Kitty.current_win_listen_on()
-  return vim.env.KITTY_LISTEN_ON
-end
-function Kitty.current_win_id()
-  return vim.env.KITTY_WINDOW_ID
-end
-local unique_listen_on_counter = 0
-function Kitty.port_from_pid(prefix)
-  unique_listen_on_counter = unique_listen_on_counter + 1
-  return (prefix or "unix:/tmp/kitty.nvim-") .. vim.fn.getpid() .. unique_listen_on_counter
-end
-
-local api_commands_no_match = {
-  "set-font-size",
-  "ls",
-}
 
 function Kitty:build_api_command(cmd, args_)
-  local args = { "@", "--to", self.listen_on, cmd }
-  if not vim.tbl_contains(api_commands_no_match, cmd) then
-    self:append_match_args(args)
-  end
-  args = vim.list_extend(args, args_ or {})
-  return args
+  return kutils.build_api_command(self.listen_on, self.match_arg, cmd, args_)
 end
 function Kitty:api_command(cmd, args_, on_exit, stdio)
-  local spawn_args = self:build_api_command(cmd, args_)
-  stdio = stdio or { nil, nil, nil }
-  if not stdio[3] then -- stderr
-    stdio[3] = vim.loop.new_pipe(false)
-  end
-  local handle, pid = vim.loop.spawn("kitty", {
-    args = spawn_args,
-    stdio = stdio,
-  }, function(code, signal)
-    if stdio then
-      local stdin, stdout, stderr = unpack(stdio)
-      if stdin then
-        stdin:close()
-      end
-      if stdout then
-        stdout:read_stop()
-        stdout:close()
-      end
-      if stderr then
-        stderr:read_stop()
-        stderr:close()
-      end
-    end
-
-    if on_exit then
-      on_exit(code, signal)
-    end
-  end)
-
-  stdio[3]:read_start(function(err, data)
-    if err then
-      error(err)
-    end
-    if data then
-      vim.notify("Kitty: " .. data, vim.log.levels.ERROR)
-      vim.notify("From: " .. cmd .. " - " .. table.concat(spawn_args, " "), vim.log.levels.WARN)
-    end
-  end)
-
-  return handle, pid
+  return kutils.api_command(self.listen_on, self.match_arg, cmd, args_, on_exit, stdio)
 end
 function Kitty:api_command_blocking(cmd, args_)
-  local cmdline = self:build_api_command(cmd, args_)
-  cmdline = { "kitty", unpack(cmdline) }
-  vim.fn.system(cmdline)
+  kutils.api_command_blocking(self.listen_on, self.match_arg, cmd, args_)
 end
 local from_api_command = function(name, default_args)
   default_args = default_args or {}
@@ -102,11 +40,9 @@ local from_api_command_blocking = function(name)
     return self:api_command_blocking(name, args)
   end
 end
-function Kitty:append_match_args(args)
-  if self.match_arg and self.match_arg ~= "" then
-    vim.list_extend(args, { "--match", self.match_arg })
-  end
-  return args
+
+function Kitty:append_match_args(args, use_window_id, flag)
+  return kutils.append_match_args(args, self.match_arg, use_window_id, flag)
 end
 
 function Kitty:close_on_leave(evt)
@@ -121,6 +57,7 @@ function Kitty:close_on_leave(evt)
     })
   end)
 end
+
 Kitty.close = from_api_command "close-window"
 Kitty.close_tab = from_api_command "close-tab"
 Kitty.close_blocking = from_api_command_blocking "close-window"
@@ -151,7 +88,8 @@ function Kitty:nvim_env_injections()
 end
 
 Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
-  -- self:ls(nil, function(code, _)
+  -- TODO: make this smarter?
+  -- self:ls( function(code, _)
   --   if code == 0 then
   --     return
   --   end
@@ -410,6 +348,9 @@ function Kitty:goto_layout(name, on_exit, stdio)
 
   return self:api_command("goto-layout", { name }, on_exit, stdio)
 end
+function Kitty:last_used_layout(on_exit, stdio)
+  return self:goto_layout("last-used-layout", on_exit, stdio)
+end
 Kitty.run_kitten = from_api_command "kitten"
 
 function Kitty:focus(on_exit, stdio)
@@ -433,8 +374,14 @@ function Kitty:detach(target, on_exit, stdio)
     end
   else
     -- Pass 'new' for new tab
-    if target ~= nil and target ~= "new-window" then
-      vim.list_extend(args, { "--target-tab", target }) -- target should be SomeTab.match_arg
+    if target == "new-window" then
+      -- Specifically no --target-tab
+    elseif target ~= nil then
+      if type(target) == "string" then
+        vim.list_extend(args, { "--target-tab", target }) -- target should be SomeTab.match_arg
+      else
+        target:append_match_args(args, true, "--target-tab")
+      end
     end
   end
   return self:api_command("detach-window", args, on_exit, stdio)
@@ -487,7 +434,7 @@ function Kitty:get_text(extent, with_text, args, on_exit)
 
   stdout:read_start(function(err, data)
     if err then
-      vim.notify(err, vim.log.levels.ERROR)
+      error(err)
     end
     if data then
       with_text(data)
@@ -496,7 +443,7 @@ function Kitty:get_text(extent, with_text, args, on_exit)
 end
 function Kitty:get_selection(reg)
   self:get_text("selection", function(data)
-    vim.fn.setreg(reg, data)
+    vim.fn.setreg(reg or '"', data)
   end, {})
 end
 
@@ -525,7 +472,9 @@ function Kitty:scroll_down(opts, on_exit, stdio)
   return self:scroll(vim.list_extend(opts or {}, { down = 1 }), on_exit, stdio)
 end
 Kitty.signal_child = from_api_command "signal-child"
+local json_to_buffer = require("kitty.ls").json_to_buffer
 function Kitty:ls(cb, on_exit, stdio)
+  cb = cb or json_to_buffer or vim.print
   local stdout
   if stdio == nil or stdio[2] == nil then
     stdout = vim.loop.new_pipe(false)
@@ -540,10 +489,8 @@ function Kitty:ls(cb, on_exit, stdio)
       vim.notify(err, vim.log.levels.ERROR)
     end
     if data then
-      if cb then
-        local decoded = vim.json.decode(data)
-        cb(decoded)
-      end
+      local decoded = vim.json.decode(data)
+      cb(decoded, data)
     end
   end)
   return handle, pid
@@ -552,15 +499,10 @@ Kitty.font_size = from_api_command "set-font-size"
 Kitty.font_up = from_api_command("set-font-size", { "--", "+1" })
 Kitty.font_down = from_api_command("set-font-size", { "--", "-1" })
 Kitty.set_spacing = from_api_command "set-spacing"
+Kitty.set_window_title = from_api_command("set-window-title", { "--temporary" })
 
-function Kitty:set_match_arg(opts)
-  if type(opts) == "string" then
-    self.match_arg = opts
-    return
-  end
-  for k, v in pairs(opts) do
-    self.match_arg = k .. ":" .. tostring(v)
-  end
+function Kitty:set_match_arg(arg)
+  self.match_arg = arg
 end
 function Kitty:set_match_arg_from_id(id)
   self:set_match_arg { id = id }
@@ -585,12 +527,12 @@ function Kitty:new(o)
   self.__index = self
 
   -- Setup stuff
-  if o.listen_on == "unique_port" then
-    o.listen_on = Kitty.port_from_pid()
+  if type(o.listen_on) == "function" then
+    o.listen_on = o.listen_on()
   end
   if o.attach_to_current_win then
-    o.listen_on = Kitty.current_win_listen_on()
-    o.from_id = Kitty.current_win_id()
+    o.listen_on = kutils.current_win_listen_on()
+    o.from_id = type(o.attach_to_current_win) == "boolean" and kutils.current_win_id() or o.attach_to_current_win
     o.is_opened = true
     o.open = function(...) end
     o.attach_to_current_win = nil
@@ -608,6 +550,17 @@ function Kitty:new(o)
   titles[#titles + 1] = o.title
 
   return o
+end
+
+-- TODO: create a user command that allows interacting with the terminal
+function Kitty:user_command(name)
+  vim.api.nvim_create_user_command(name, function(args)
+    if args.fargs[1]:sub(1, 1) == "+" then
+      self[args.fargs[1]:sub(2)](self, vim.list_slice(args.fargs, 2, nil))
+    else
+      self:send(args.args .. "\n")
+    end
+  end, { nargs = "?" })
 end
 
 Kitty.setup_make = require("kitty.make").setup
