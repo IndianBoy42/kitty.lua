@@ -79,14 +79,6 @@ local function open_if_not_yet(fn)
   end
 end
 
-function Kitty:nvim_env_injections()
-  return {
-    NVIM_LISTEN_ADDRESS = vim.v.servername,
-    NVIM = vim.v.servername,
-    NVIM_PID = vim.fn.getpid(),
-  }
-end
-
 Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
   -- TODO: make this smarter?
   -- self:ls( function(code, _)
@@ -101,7 +93,7 @@ Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
     "--override",
     "allow_remote_control=yes",
   }
-  local env = Kitty:nvim_env_injections()
+  local env = kutils.nvim_env_injections()
   if env then
     for k, v in pairs(env) do
       args[#args + 1] = "--override"
@@ -231,7 +223,7 @@ function Kitty:sub_window(o, where)
     "--cwd",
     open_cwd,
   }
-  local env = Sub:nvim_env_injections()
+  local env = kutils.nvim_env_injections()
   if env then
     for k, v in pairs(env) do
       Sub.launch_args[#Sub.launch_args + 1] = "--env"
@@ -483,7 +475,7 @@ function Kitty:ls(cb, on_exit, stdio)
     stdout = stdio[2]
   end
 
-  local handle, pid = self:api_command("ls", {}, on_exit, stdio)
+  local handle, pid = self:api_command("ls", { "--all-env-vars" }, on_exit, stdio)
   stdout:read_start(function(err, data)
     if err then
       vim.notify(err, vim.log.levels.ERROR)

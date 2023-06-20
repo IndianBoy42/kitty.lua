@@ -143,4 +143,12 @@ function M.api_command_blocking(listen_on, match_arg, cmd, args_)
   vim.fn.system(cmdline)
 end
 
+function M.nvim_env_injections()
+  return {
+    NVIM_LISTEN_ADDRESS = vim.v.servername,
+    NVIM = vim.v.servername,
+    NVIM_PID = vim.fn.getpid(),
+  }
+end
+
 return M
