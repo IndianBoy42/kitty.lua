@@ -8,6 +8,7 @@ local Kitty = {
   is_tab = false,
   launch_counter = 0,
   from_id = 1,
+  kitty_client_exe = "kitty", -- Can use kitten instead?
 }
 
 function Kitty:build_api_command(cmd, args_)
@@ -150,7 +151,7 @@ Kitty.open = open_if_not_yet(function(self, args_, on_exit, stdio)
   end
 
   -- TODO: use jobstart?
-  local handle, pid = vim.loop.spawn("kitty", {
+  local handle, pid = vim.loop.spawn(self.kitty_client_exe, {
     args = args,
     stdio = stdio,
   }, function(code, signal)
