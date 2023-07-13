@@ -151,4 +151,31 @@ function M.nvim_env_injections()
   }
 end
 
+function M.get_selection(type)
+  local feedkeys = vim.api.nvim_feedkeys
+  local termcodes = vim.api.nvim_replace_termcodes
+  local function t(k)
+    return termcodes(k, true, true, true)
+  end
+  local bufnr = vim.api.nvim_get_current_buf()
+  local start_mark, finish_mark = "[", "]"
+  if type == "v" or type == "V" or type == t "<C-v>" then
+    start_mark, finish_mark = "<", ">"
+  end
+
+  local start = vim.api.nvim_buf_get_mark(bufnr, start_mark)
+  local finish = vim.api.nvim_buf_get_mark(bufnr, finish_mark)
+
+  if type == "lines" or type == "V" then
+    return vim.api.nvim_buf_get_lines(bufnr, start[1] - 1, finish[1], false)
+  elseif type == "block" or type == t "<C-v>" then
+    local lines = vim.api.nvim_buf_get_lines(bufnr, start[1] - 1, finish[1], false)
+    return vim.tbl_map(function(l)
+      return l:sub(start[2], finish[2])
+    end, lines)
+  else
+    return vim.api.nvim_buf_get_text(0, start[1] - 1, start[2], finish[1] - 1, finish[2] + 1, {})
+  end
+end
+
 return M

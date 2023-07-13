@@ -391,6 +391,14 @@ end
 -- end
 
 function Kitty:send(text, on_exit, stdio)
+  if type(text) == "table" then
+    if text.selection then
+      if text.selection == true then
+        text.selection = vim.api.nvim_get_mode()
+      end
+      text = kutils.get_selection(text.selection)
+    end
+  end
   return self:api_command("send-text", { "--", text }, on_exit, stdio)
 end
 function Kitty:send_file(from_file, on_exit, stdio)
