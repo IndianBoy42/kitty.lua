@@ -231,6 +231,12 @@ function Kitty:sub_window(o, where)
       Sub.launch_args[#Sub.launch_args + 1] = k .. "=" .. v
     end
   end
+  if Sub.env_injections then
+    for k, v in pairs(Sub.env_injections) do
+      Sub.launch_args[#Sub.launch_args + 1] = "--env"
+      Sub.launch_args[#Sub.launch_args + 1] = k .. "=" .. v
+    end
+  end
   if not Sub.focus_on_open then
     Sub.launch_args[#Sub.launch_args + 1] = "--dont-take-focus"
   end
