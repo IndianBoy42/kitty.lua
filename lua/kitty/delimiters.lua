@@ -17,10 +17,12 @@ return {
     comment_character = "#",
     file_ending = "lua",
   },
+  { 1, 2 },
   sqlite = {
     block_delimiter_start = "",
-    block_delimiter_end = "",
     newline_delimiter = "",
+    -- hello
+    block_delimiter_end = "",
     line_delimiter_start = "",
     line_delimiter_end = "",
     comment_character = "--",

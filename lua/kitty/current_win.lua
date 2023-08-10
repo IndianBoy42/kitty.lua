@@ -15,9 +15,7 @@ K.setup = function(cfg)
     __index = function(m, k)
       local ret = KT[k]
       if type(ret) == "function" then
-        local f = function(...)
-          return ret(KT, ...)
-        end
+        local f = function(...) return ret(KT, ...) end
         m[k] = f
         return f
       else
@@ -30,13 +28,9 @@ K.setup = function(cfg)
   local guifontsize = function()
     local font = vim.o.guifont
     local size = font:match ":h%d+"
-    if size then
-      K.font_size(size:sub(3))
-    end
+    if size then K.font_size(size:sub(3)) end
   end
-  vim.api.nvim_create_user_command("KittyFontSize", function(a)
-    K.font_size(a.args)
-  end, { nargs = "?" })
+  vim.api.nvim_create_user_command("KittyFontSize", function(a) K.font_size(a.args) end, { nargs = "?" })
   vim.api.nvim_create_user_command("KittyFontUp", K.font_up, {})
   vim.api.nvim_create_user_command("KittyFontDown", K.font_down, {})
   vim.api.nvim_create_autocmd("OptionSet", {
@@ -44,9 +38,7 @@ K.setup = function(cfg)
     callback = guifontsize,
   })
 
-  K.setup = function(_)
-    return K
-  end
+  K.setup = function(_) return K end
 
   return K
 end

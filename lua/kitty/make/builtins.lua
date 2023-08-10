@@ -8,9 +8,7 @@ return {
     targets.default = targets.make
   end,
   ["just"] = function(targets, _)
-    if vim.fn.executable "just" == 0 then
-      return
-    end
+    if vim.fn.executable "just" == 0 then return end
 
     targets["just: <default>"] = {
       cmd = "just",
@@ -41,9 +39,7 @@ return {
     targets.default = targets.just_default
   end,
   ["cargo"] = function(targets)
-    if vim.fn.filereadable "Cargo.toml" == 0 or vim.fn.executable "cargo" == 0 then
-      return
-    end
+    if vim.fn.filereadable "Cargo.toml" == 0 or vim.fn.executable "cargo" == 0 then return end
 
     targets.check = {
       cmd = "cargo check",
@@ -86,9 +82,7 @@ return {
     targets.default = targets.check
   end,
   ["vscode"] = function(targets)
-    if vim.fn.filereadable "tasks.json" == 0 and vim.fn.filereadable "launch.json" == 0 then
-      return
-    end
+    if vim.fn.filereadable "tasks.json" == 0 and vim.fn.filereadable "launch.json" == 0 then return end
     -- TODO: https://code.visualstudio.com/docs/editor/tasks
     local tasks = vim.json.decode(io.open("tasks.json", "r"):read "*a").tasks
     local launch = vim.json.decode(io.open("launch.json", "r"):read "*a").configurations

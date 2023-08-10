@@ -1,8 +1,6 @@
 return function(topts)
   topts = topts or require("telescope.themes").get_cursor() -- get_dropdown
-  if type(topts) == "string" then
-    topts = require("telescope.themes")[topts]()
-  end
+  if type(topts) == "string" then topts = require("telescope.themes")[topts]() end
   local conf = require("telescope.config").values
   return function(items, opts, on_choice)
     opts = opts or {}

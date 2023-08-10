@@ -1,16 +1,12 @@
-function get_mark(mark)
+local function get_mark(mark)
   local position = vim.api.nvim_buf_get_mark(0, mark)
-  if position[1] == 0 then
-    return nil
-  end
+  if position[1] == 0 then return nil end
   position[2] = position[2] + 1
   return position
 end
-function get_lines(start, stop)
-  return vim.api.nvim_buf_get_lines(0, start - 1, stop, false)
-end
+local function get_lines(start, stop) return vim.api.nvim_buf_get_lines(0, start - 1, stop, false) end
 
-function get_text(first_position, last_position)
+local function get_text(first_position, last_position)
   -- I don't understand why this is right, but everything else isn't.
   return vim.api.nvim_buf_get_text(
     0,
@@ -41,22 +37,14 @@ function Repl.setup(T)
   -- Functions
   function T:ft_opts()
     local _ft = self.ftype
-    if _ft == nil then
-      _ft = vim.bo.filetype
-    end
-    if self.filetypes[_ft] == nil then
-      self.filetypes[_ft] = self.filetypes.default
-    end
+    if _ft == nil then _ft = vim.bo.filetype end
+    if self.filetypes[_ft] == nil then self.filetypes[_ft] = self.filetypes.default end
     return self.filetypes[_ft]
   end
   function T:start_repl()
     local send = self:ft_opts().start_repl
-    if type(send) == "function" then
-      send = send(self)
-    end
-    if send then
-      self:send(send)
-    end
+    if type(send) == "function" then send = send(self) end
+    if send then self:send(send) end
   end
   function T:cell_delimiter_pattern()
     local o = self:ft_opts()
@@ -115,21 +103,11 @@ function Repl.setup(T)
       return get_text(p1, p2)
     end
   end
-  function T:get_yanked(mode)
-    return self:get_range(mode or "char", get_mark "[", get_mark "]")
-  end
-  function T:get_yanked_lines()
-    return self:get_yanked "line"
-  end
-  function T:get_selected(mode)
-    return self:get_range(mode or "char", get_mark "<", get_mark ">")
-  end
-  function T:get_selected_lines()
-    return self:get_selected "line"
-  end
-  function T:get_current_line()
-    return { vim.api.nvim_get_current_line() }
-  end
+  function T:get_yanked(mode) return self:get_range(mode or "char", get_mark "[", get_mark "]") end
+  function T:get_yanked_lines() return self:get_yanked "line" end
+  function T:get_selected(mode) return self:get_range(mode or "char", get_mark "<", get_mark ">") end
+  function T:get_selected_lines() return self:get_selected "line" end
+  function T:get_current_line() return { vim.api.nvim_get_current_line() } end
 
   -- Can be used as operatorfunc
   function T:send_range(mode, p1, p2)
@@ -156,12 +134,8 @@ function Repl.setup(T)
       self:send(line .. "\r")
     end
   end
-  function T:send_current_line()
-    return self:send_lines(self:get_current_line())
-  end
-  function T:send_current_word()
-    self:send_lines { vim.fn.expand "<cword>" }
-  end
+  function T:send_current_line() return self:send_lines(self:get_current_line()) end
+  function T:send_current_word() self:send_lines { vim.fn.expand "<cword>" } end
 end
 
 return Repl

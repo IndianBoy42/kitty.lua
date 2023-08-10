@@ -1,6 +1,6 @@
 local M = {}
 local meta_M = {}
 M.python = {
-    launch = 
+  launch = {},
 }
 return setmetatable(M, meta_M)

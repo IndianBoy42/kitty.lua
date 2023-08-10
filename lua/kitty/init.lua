@@ -35,7 +35,7 @@ K.setup = function(cfg, cb)
     if not cfg.attach_to_current_win and cfg.attach_to_existing_kt_win then
       if not found_tab then error "Couldn't find the current window, this is a bug in kitty.current_win" end
       for i, winid in ipairs(found_tab.active_window_history) do
-        if i ~= found_win and ls:window_by_id(winid) then cfg.attach_to_current_win = winid end
+        if winid ~= found_win.id and ls:window_by_id(winid) then cfg.attach_to_current_win = winid end
       end
     end
     -- Find another existing tab in the current OS window
@@ -57,7 +57,7 @@ K.setup = function(cfg, cb)
     -- Couldn't find any existing window
     if not cfg.attach_to_current_win then
       vim.notify "Creating a new Kitty window"
-      if cfg.create_new_win ~= false then K.instance = CW.launch(cfg, cfg.create_new_win or "window") end
+      if cfg.create_new_win ~= false then K.instance = CW.launch(cfg, cfg.create_new_win or true) end
     else
       vim.notify("Found Kitty window " .. cfg.attach_to_current_win)
       -- TODO: send the nvim injections

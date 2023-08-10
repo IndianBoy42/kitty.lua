@@ -5,19 +5,27 @@
 - OOP based lua API for the Kitty remote control protocol to build other projects/plugins
 - Integrations
 
-## TODO:
+## TODO
+
+- Async-ify: Rewrite to `vim.system` + `lewis6991/async.nvim` for much cleaner API
 
 - inject the correct nvim environment variables so neovim-remote works
 
-- Integrate with: https://github.com/stevearc/overseer.nvim/blob/master/doc/strategies.md
+- Integrate with [overseer.nvim](https://github.com/stevearc/overseer.nvim/blob/master/doc/strategies.md)
 
 - Mirror the toggleterm API to be a drop in replacement
 
 - Integrate with: neotest
 
-# USAGE:
+- Implement the [protocol](https://sw.kovidgoyal.net/kitty/rc_protocol/) directly
 
-The bulk of the api is in `require'kitty. term'`,
+- Make the attach and current_win work for cases like using neovide
+
+- Needs real documentation
+
+# USAGE
+
+The bulk of the api is in `require'kitty.term'`,
 and accessible through methods on a kitty terminal object.
 In general, each terminal object you get represents one kitty window (not os window).
 
@@ -112,7 +120,7 @@ require("rust-tools").config.options.tools.executor = require'kitty'.rust_tools_
 
 ## kitty.term API
 
-https://sw.kovidgoyal.net/kitty/remote-control/#kitty
+<https://sw.kovidgoyal.net/kitty/remote-control/#kitty>
 
 TODO complete this
 

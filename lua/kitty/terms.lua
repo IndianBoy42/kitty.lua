@@ -13,7 +13,7 @@ M.get_terminal = get_terminal
 
 local function get_terminal_name(args)
   local k = 0
-  if args.fargs and #args.fargs > 0 then
+  if args and args.fargs and #args.fargs > 0 then
     if args.fargs[1]:sub(1, 1) == ":" then
       k = args.fargs[1]:sub(2)
 
@@ -36,23 +36,29 @@ end
 local function new_terminal(where, opts, args, k)
   opts = opts or {}
   k = k or get_terminal_name(args)
-  local cmd = args.fargs
+  local cmd = args and args.fargs
   if not cmd or #cmd == 0 then
-    cmd = {} -- TODO: something
+    -- TODO: something
   end
 
   opts.env_injections = opts.env_injections or {}
-  if k then opts.env_injections.KITTY_NVIM_NAME = k end
+  if type(k) == "string" then
+    opts.env_injections.KITTY_NVIM_NAME = k
+  elseif type(k) == "number" then
+    opts.env_injections.KITTY_NVIM_NAME = "buf_" .. k
+  end
 
-  if cmd == nil then cmd = "launch" end
+  if where == nil then where = true end
   terms[k] = require("kitty.current_win").launch(opts, where, cmd)
   terms[get_uuid()] = terms[k]
   if terms.global == nil then terms.global = terms[k] end
+  return terms[k]
 end
 M.new_terminal = new_terminal
 
+local attach_opts = {}
 function M.kitty_attach(opts)
-  opts = opts or {}
+  opts = opts or attach_opts
   require("kitty").setup(opts, function(K, ls)
     terms.global = K.instance
 
@@ -76,7 +82,11 @@ M.defaults = {}
 M.setup = function(opts)
   local cmd = vim.api.nvim_create_user_command
   opts = vim.tbl_deep_extend("keep", opts or {}, M.defaults)
-  M.kitty_attach(opts.attach)
+  if not opts.dont_attach then
+    M.kitty_attach(opts.attach)
+  else
+    attach_opts = opts.attach
+  end
 
   cmd("KittyTab", function(args) new_terminal("tab", {}, args) end, { nargs = "*" })
   cmd("KittyWindow", function(args) new_terminal("window", {}, args) end, { nargs = "*" })
@@ -84,9 +94,10 @@ M.setup = function(opts)
   cmd("Kitty", function(args)
     local k = get_terminal_name(args)
     local t = get_terminal(k)
+    if not terms.global and (args.args == nil or #args.args == 0) then return M.kitty_attach() end
     if t then
       if args.fargs and #args.fargs > 0 then
-        t:send(args.args .. "\n")
+        t:send(args.args .. "\\r")
       else
         -- TODO:
         t:focus()
@@ -102,6 +113,11 @@ M.setup = function(opts)
       pcall(function() t:close() end)
       terms[k] = nil
     end
+  end, { nargs = "*" })
+  cmd("KittyDetach", function(args)
+    local k = get_terminal_name(args)
+    local t = get_terminal(k)
+    if t then pcall(function() t:detach(args.fargs and args.fargs[1]) end) end
   end, { nargs = "*" })
   cmd("KittyList", function(args) vim.print(terms) end, {})
 
