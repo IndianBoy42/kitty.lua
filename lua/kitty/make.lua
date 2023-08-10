@@ -1,5 +1,5 @@
 local Make = {}
-local uv = vim.uv or vim.loop
+local system = vim.system
 
 local function nop(...) return ... end
 
@@ -8,22 +8,17 @@ function Make.find_build_file(pattern, args)
   vim.notify("TODO: search cwd/lsp_root_dir for " .. pattern, vim.log.levels.WARN)
 end
 
-function Make.from_command(cmd, args, parse)
-  local stdout = uv.new_pipe(false)
-  uv.spawn(cmd, { args = args, stdio = { nil, stdout, nil } }, function()
-    if stdout then
-      stdout:read_stop()
-      stdout:close()
-    end
-  end)
-  uv.read_start(stdout, function(err, data)
-    if err then
-      vim.notify("Error running command: " .. err, vim.log.levels.ERROR)
-      return
-    end
+function Make.from_command(cmd, parse)
+  return system(cmd, {
+    stdout = function(err, data)
+      if err then
+        vim.notify("Error running command: " .. err, vim.log.levels.ERROR)
+        return
+      end
 
-    if data then parse(data) end
-  end)
+      if data then parse(data) end
+    end,
+  }, function() end)
 end
 
 -- Append commands to self.targets

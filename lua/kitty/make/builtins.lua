@@ -17,7 +17,7 @@ return {
       provider = "just",
     }
 
-    require("kitty.make").from_command("just", { "--list" }, function(data)
+    require("kitty.make").from_command({ "just",  "--list"  }, function(data)
       local lines = vim.split(data, "\n")
       for i, line in ipairs(lines) do
         if i > 1 then -- Skip first line

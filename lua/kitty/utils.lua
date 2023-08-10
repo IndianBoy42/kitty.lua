@@ -1,5 +1,4 @@
 local M = {}
-local uv = vim.uv or vim.loop
 local function nop(...) return ... end
 
 function M.call_or_input(self, arg, fun, input_opts, from_input, ...)
@@ -84,54 +83,41 @@ function M.append_match_args(args, match_arg, use_window_id, flag)
   end
   return args
 end
-function M.build_api_command(listen_on, match_arg, cmd, args_)
-  local args = { "@", "--to", listen_on, cmd }
+function M.build_api_command(listen_on, match_arg, kitty, cmd, args)
+  local built_args = { kitty, "@", "--to", listen_on, cmd }
   if not vim.tbl_contains(M.api_commands_no_match, cmd) then
-    M.append_match_args(args, match_arg, cmd:sub(-4) == "-tab" or cmd:sub(-7) == "-layout" or cmd:sub(-8) == "-layouts")
+    M.append_match_args(
+      built_args,
+      match_arg,
+      cmd:sub(-4) == "-tab" or cmd:sub(-7) == "-layout" or cmd:sub(-8) == "-layouts"
+    )
   end
-  args = vim.list_extend(args, args_ or {})
-  return args
+  built_args = vim.list_extend(built_args, args or {})
+  return built_args
 end
-function M.api_command(listen_on, match_arg, cmd, args_, on_exit, stdio)
-  local spawn_args = M.build_api_command(listen_on, match_arg, cmd, args_)
-  stdio = stdio or { nil, nil, nil }
-  if not stdio[3] then -- stderr
-    stdio[3] = uv.new_pipe(false)
-  end
-  local handle, pid = uv.spawn("kitty", {
-    args = spawn_args,
-    stdio = stdio,
-  }, function(code, signal)
-    if stdio then
-      local stdin, stdout, stderr = unpack(stdio)
-      if stdin then stdin:close() end
-      if stdout then
-        stdout:read_stop()
-        stdout:close()
-      end
-      if stderr then
-        stderr:read_stop()
-        stderr:close()
-      end
-    end
-
-    if on_exit then on_exit(code, signal) end
-  end)
-
-  stdio[3]:read_start(function(err, data)
-    if err then error(err) end
-    if data then
-      vim.notify("M. " .. data, vim.log.levels.ERROR)
-      vim.notify("From: " .. cmd .. " - " .. table.concat(spawn_args, " "), vim.log.levels.WARN)
-    end
-  end)
-
-  return handle, pid
+local system = vim.system
+function M.api_command(listen_on, match_arg, kitty, cmd, args, system_opts, on_exit)
+  system_opts = system_opts or {}
+  local cmdline = M.build_api_command(listen_on, match_arg, kitty, cmd, args)
+  return system(
+    cmdline,
+    vim.tbl_extend("keep", system_opts, {
+      stderr = function(err, data)
+        vim.schedule(function()
+          if err then error(err) end
+          if data then
+            vim.notify(data, vim.log.levels.ERROR)
+            vim.notify("From: " .. cmd .. " - " .. table.concat(cmd, " "), vim.log.levels.WARN)
+          end
+        end)
+      end,
+    }),
+    on_exit
+  )
 end
 function M.api_command_blocking(listen_on, match_arg, cmd, args_)
   local cmdline = M.build_api_command(listen_on, match_arg, cmd, args_)
-  cmdline = { "kitty", unpack(cmdline) }
-  vim.fn.system(cmdline)
+  return vim.fn.system(cmdline)
 end
 
 function M.nvim_env_injections(opts)
@@ -158,7 +144,7 @@ function M.get_selection(type)
   local start = vim.api.nvim_buf_get_mark(bufnr, start_mark)
   local finish = vim.api.nvim_buf_get_mark(bufnr, finish_mark)
 
-  if type == "lines" or type == "V" then
+  if type == "line" or type == "V" then
     return vim.api.nvim_buf_get_lines(bufnr, start[1] - 1, finish[1], false)
   elseif type == "block" or type == t "<C-v>" then
     local lines = vim.api.nvim_buf_get_lines(bufnr, start[1] - 1, finish[1], false)

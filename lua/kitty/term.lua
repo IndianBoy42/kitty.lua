@@ -1,6 +1,6 @@
 -- REF: https://sw.kovidgoyal.net/kitty/remote-control/
-local uv = vim.uv or vim.loop
 local api = vim.api
+local system = vim.system
 local titles = {}
 local kutils = require "kitty.utils"
 local Kitty = {
@@ -14,9 +14,11 @@ local Kitty = {
   send_text_hooks = {},
 }
 
-function Kitty:build_api_command(cmd, args) return kutils.build_api_command(self.listen_on, self.match_arg, cmd, args) end
-function Kitty:api_command(cmd, args, on_exit, stdio)
-  return kutils.api_command(self.listen_on, self.match_arg, cmd, args, on_exit, stdio)
+function Kitty:build_api_command(cmd, args)
+  return kutils.build_api_command(self.listen_on, self.match_arg, self.kitty_client_exe, cmd, args)
+end
+function Kitty:api_command(cmd, args, system_opts, on_exit)
+  return kutils.api_command(self.listen_on, self.match_arg, self.kitty_client_exe, cmd, args, system_opts, on_exit)
 end
 function Kitty:api_command_blocking(cmd, args) kutils.api_command_blocking(self.listen_on, self.match_arg, cmd, args) end
 local from_api_command = function(name, default_args)
@@ -24,10 +26,10 @@ local from_api_command = function(name, default_args)
   vim.validate {
     name = { name, "string" },
   }
-  return function(self, args, on_exit, stdio)
+  return function(self, args, system_opts, on_exit)
     if type(args) ~= "table" then args = { args } end
     args = vim.list_extend(args or {}, default_args)
-    return self:api_command(name, args, on_exit, stdio)
+    return self:api_command(name, args, system_opts, on_exit)
   end
 end
 local from_api_command_blocking = function(name)
@@ -60,13 +62,13 @@ Kitty.close_blocking = from_api_command_blocking "close-window"
 
 -- TODO: make this smarter?
 local function open_if_not_yet(fn)
-  return function(self, args, on_exit, stdio)
+  return function(self, args, system_opts, on_exit)
     if self.is_opened then
       self:focus()
       return
     end
 
-    local handle, pid = fn(self, args, on_exit, stdio)
+    local handle, pid = fn(self, args, system_opts, on_exit)
     -- TODO: get the window/tab id
 
     self.is_opened = true
@@ -75,7 +77,7 @@ local function open_if_not_yet(fn)
   end
 end
 
-Kitty.open = open_if_not_yet(function(self, args, on_exit, stdio)
+Kitty.open = open_if_not_yet(function(self, args, system_opts, on_exit)
   -- TODO: make this smarter?
   -- self:ls( function(code, _)
   --   if code == 0 then
@@ -83,7 +85,8 @@ Kitty.open = open_if_not_yet(function(self, args, on_exit, stdio)
   --   end
   -- end)
 
-  local open_args = {
+  local cmdline = {
+    self.kitty_open_exe or "kitty",
     "--listen-on",
     self.listen_on,
     "--override",
@@ -92,71 +95,74 @@ Kitty.open = open_if_not_yet(function(self, args, on_exit, stdio)
   local env = kutils.nvim_env_injections()
   if env then
     for k, v in pairs(env) do
-      open_args[#open_args + 1] = "--override"
-      open_args[#open_args + 1] = "env=" .. k .. "=" .. v
+      cmdline[#cmdline + 1] = "--override"
+      cmdline[#cmdline + 1] = "env=" .. k .. "=" .. v
     end
   end
   if self.title then
-    open_args[#open_args + 1] = "--title"
-    open_args[#open_args + 1] = self.title
+    cmdline[#cmdline + 1] = "--title"
+    cmdline[#cmdline + 1] = self.title
   end
   if self.focus_on_open then
     -- TODO: Sub.focus_on_open and "" or "--dont-take-focus",
   end
   if self.open_cwd then
-    open_args[#open_args + 1] = "--directory"
-    open_args[#open_args + 1] = self.open_cwd
+    cmdline[#cmdline + 1] = "--directory"
+    cmdline[#cmdline + 1] = self.open_cwd
   end
-  if self.keep_open then open_args[#open_args + 1] = "--hold" end
-  if not self.dont_detach then open_args[#open_args + 1] = "--detach" end
+  if self.keep_open then cmdline[#cmdline + 1] = "--hold" end
+  if not self.dont_detach then cmdline[#cmdline + 1] = "--detach" end
   if self.open_session then
-    open_args[#open_args + 1] = "--session"
-    open_args[#open_args + 1] = self.open_session
+    cmdline[#cmdline + 1] = "--session"
+    cmdline[#cmdline + 1] = self.open_session
   end
   if self.open_window_as then
-    open_args[#open_args + 1] = "--start-as"
-    open_args[#open_args + 1] = self.open_window_as
+    cmdline[#cmdline + 1] = "--start-as"
+    cmdline[#cmdline + 1] = self.open_window_as
   end
   if self.open_wm_class then
     if type(self.open_wm_class) == "string" then
-      open_args[#open_args + 1] = "--class"
-      open_args[#open_args + 1] = self.open_wm_class
+      cmdline[#cmdline + 1] = "--class"
+      cmdline[#cmdline + 1] = self.open_wm_class
     else
-      open_args[#open_args + 1] = "--class"
-      open_args[#open_args + 1] = self.open_wm_class.class or self.open_wm_class[1]
-      open_args[#open_args + 1] = "--name"
-      open_args[#open_args + 1] = self.open_wm_class.name or self.open_wm_class[2]
+      cmdline[#cmdline + 1] = "--class"
+      cmdline[#cmdline + 1] = self.open_wm_class.class or self.open_wm_class[1]
+      cmdline[#cmdline + 1] = "--name"
+      cmdline[#cmdline + 1] = self.open_wm_class.name or self.open_wm_class[2]
     end
   end
   if self.open_layout then
-    open_args[#open_args + 1] = "--override"
-    open_args[#open_args + 1] = "enabled_layouts='" .. self.open_layout .. ",*'"
+    cmdline[#cmdline + 1] = "--override"
+    cmdline[#cmdline + 1] = "enabled_layouts='" .. self.open_layout .. ",*'"
   end
   if args then
-    vim.list_extend(open_args, args)
+    vim.list_extend(cmdline, args)
   elseif self.launch_cmd then
     if type(self.launch_cmd) == "string" then self.launch_cmd = { self.launch_cmd } end
-    vim.list_extend(open_args, self.launch_cmd)
+    vim.list_extend(cmdline, self.launch_cmd)
   end
 
   -- TODO: use jobstart?
-  local handle, pid = uv.spawn(self.kitty_client_exe, {
-    args = open_args,
-    stdio = stdio,
-  }, function(code, signal)
-    self.is_opened = false
+  local handle = system(
+    cmdline,
+    vim.tbl_extend("keep", system_opts, {
+      -- TODO: handle some things?
+    }),
+    function(code, signal)
+      self.is_opened = false
 
-    if code == 0 then
-      if not self.dont_close_on_leave then self:close_on_leave() end
+      if code == 0 then
+        if not self.dont_close_on_leave then self:close_on_leave() end
+      end
+
+      if on_exit then on_exit(code, signal) end
     end
-
-    if on_exit then on_exit(code, signal) end
-  end)
+  )
 
   -- self:set_match_arg_from_pid(pid) -- FIXME: this doesn't work?
   self:set_match_arg_from_id(1)
 
-  return handle, pid
+  return handle
 end)
 
 Kitty.to_arg = setmetatable({}, {
@@ -229,34 +235,30 @@ function Kitty:sub_window(o, where)
     Sub.launch_args[#Sub.launch_args + 1] = Sub.stdin_source
   end
 
-  Sub.open = open_if_not_yet(function(sub, args, on_exit, stdio)
+  Sub.open = open_if_not_yet(function(sub, args, system_opts, on_exit)
     if not args and sub.launch_cmd then args = sub.launch_cmd end
     if type(args) == "string" then args = { args } end
     if args then sub.launch_args = vim.list_extend(sub.launch_args, args) end
 
-    -- vim.notify("Unimplemented", vim.log.levels.ERROR, {})
-    local stdout
-    if stdio == nil or stdio[2] == nil then
-      stdout = uv.new_pipe(false)
-      stdio = { nil, stdout, nil }
-    else
-      stdout = stdio[2]
-    end
-
-    local ret = { self:api_command("launch", sub.launch_args, on_exit, stdio) }
-
-    stdout:read_start(function(err, data)
-      if err then vim.notify("Error launching Kitty: " .. err, vim.log.levels.ERROR, {}) end
-      if data then sub:set_match_arg_from_id(data) end
-    end)
-    return unpack(ret)
+    local handle = self:api_command(
+      "launch",
+      sub.launch_args,
+      vim.tbl_extend("keep", {
+        stdout = function(err, data)
+          if err then vim.notify("Error launching Kitty: " .. err, vim.log.levels.ERROR, {}) end
+          if data then sub:set_match_arg_from_id(data) end
+        end,
+      }, system_opts),
+      on_exit
+    )
+    return handle
   end)
 
   return Sub
 end
-function Kitty:launch(o, where, args, on_exit, stdio)
+function Kitty:launch(o, where, args, system_opts, on_exit)
   local Sub = self:sub_window(o, where)
-  Sub:open(args, on_exit, stdio)
+  Sub:open(args, system_opts, on_exit)
   return Sub
 end
 
@@ -292,25 +294,25 @@ function Kitty:new_overlay(o, args)
   return self:launch(o, "overlay", args)
 end
 
-function Kitty:goto_layout(name, on_exit, stdio)
-  if name == "last-used-layout" then return self:api_command("last-used-layout", {}, on_exit, stdio) end
+function Kitty:goto_layout(name, system_opts, on_exit)
+  if name == "last-used-layout" then return self:api_command("last-used-layout", {}, system_opts, on_exit) end
 
-  return self:api_command("goto-layout", { name }, on_exit, stdio)
+  return self:api_command("goto-layout", { name }, system_opts, on_exit)
 end
-function Kitty:last_used_layout(on_exit, stdio) return self:goto_layout("last-used-layout", on_exit, stdio) end
+function Kitty:last_used_layout(system_opts, on_exit) return self:goto_layout("last-used-layout", system_opts, on_exit) end
 Kitty.run_kitten = from_api_command "kitten"
 
-function Kitty:focus(on_exit, stdio)
+function Kitty:focus(system_opts, on_exit)
   local default_args = {}
-  return self:api_command(self.is_tab and "focus-tab" or "focus-window", default_args, on_exit, stdio)
+  return self:api_command(self.is_tab and "focus-tab" or "focus-window", default_args, system_opts, on_exit)
 end
 Kitty.resize_os_window = from_api_command "resize-os-window"
 Kitty.resize_window = from_api_command "resize-window"
 Kitty.reset_layout = from_api_command("resize-window", { "--axis", "reset" })
 Kitty.toggle_fullscreen = from_api_command("resize-os-window", { "--action", "toggle-fullscreen" })
 Kitty.toggle_maximized = from_api_command("resize-os-window", { "--action", "toggle-maximized" })
-function Kitty:toggle_fullscreen(on_exit, stdio) self:resize_os_window({}, on_exit, stdio) end
-function Kitty:detach(target, on_exit, stdio)
+function Kitty:toggle_fullscreen(system_opts, on_exit) self:resize_os_window({}, system_opts, on_exit) end
+function Kitty:detach(target, system_opts, on_exit)
   local built_args = {}
   if self.is_tab then
     built_args = { "detach-tab" }
@@ -332,7 +334,7 @@ function Kitty:detach(target, on_exit, stdio)
       end
     end
   end
-  return self:api_command("detach-window", built_args, on_exit, stdio)
+  return self:api_command("detach-window", built_args, system_opts, on_exit)
 end
 
 -- function Kitty:send_file()
@@ -345,7 +347,7 @@ end
 --   self:send(payload)
 -- end
 
-function Kitty:send(text, on_exit, stdio)
+function Kitty:send(text, system_opts, on_exit)
   local sep = self.text_sep or "\\r"
   local send_text = text
   local bracketed_paste = self.bracketed_paste
@@ -358,7 +360,6 @@ function Kitty:send(text, on_exit, stdio)
 
     if text.selection then
       if text.selection == true then text.selection = api.nvim_get_mode().mode end
-      local sep = text.sep or "\\r"
       send_text = kutils.get_selection(text.selection)
     elseif text.text then
       send_text = text.text
@@ -384,21 +385,36 @@ function Kitty:send(text, on_exit, stdio)
     if done then break end
   end
 
-  return self:api_command("send-text", send, on_exit, stdio)
+  return self:api_command("send-text", send, system_opts, on_exit)
 end
-function Kitty:paste(text, on_exit, stdio)
+function Kitty:send_operator(args, system_opts, on_exit)
+  args = args or {}
+  Kitty.__send_operatorfunc = function(type)
+    self:send(
+      vim.tbl_extend("keep", {
+        selection = args.type or type,
+      }, args),
+      system_opts,
+      on_exit
+    )
+  end
+  vim.go.operatorfunc = "v:lua.require'kitty.term'.__send_operatorfunc"
+  return "g@" .. (args.range or "")
+end
+
+function Kitty:paste(text, system_opts, on_exit)
   if type(text) == "string" then
     text = { text = text, bracketed_paste = true }
   elseif type(text) == "table" then
     text.bracketed_paste = true
   end
-  return self:send(text, on_exit, stdio)
+  return self:send(text, system_opts, on_exit)
 end
-function Kitty:send_file(from_file, on_exit, stdio)
+function Kitty:send_file(from_file, system_opts, on_exit)
   return self:api_command("send-text", {
     "--from-file",
     (from_file or api.nvim_buf_get_name(0)),
-  }, on_exit, stdio)
+  }, system_opts, on_exit)
 end
 
 local termcodes = api.nvim_replace_termcodes
@@ -409,25 +425,41 @@ function Kitty:send_key(text)
 end
 
 -- https://sw.kovidgoyal.net/kitty/remote-control/#cmdoption-kitty-get-text-extent
-function Kitty:get_text(extent, with_text, args, on_exit)
-  if not with_text then
-    with_text = function(data)
-      vim.cmd.split()
-      vim.cmd.enew()
-      api.nvim_buf_set_lines(0, 0, -1, false, vim.split(data, "\n"))
+function Kitty:get_text_stream(extent, args, system_opts, on_exit)
+  return self:api_command(
+    "get-text",
+    vim.list_extend({ "--extent", (extent or "screen") }, args or {}),
+    system_opts,
+    on_exit
+  )
+end
+function Kitty:get_text(extent, args, on_exit)
+  local buffer = {}
+  return self:get_text_stream(extent, args, {
+    stdout = function(err, data)
+      if err then error(err) end
+      if data then buffer[#buffer + 1] = data end
+    end,
+  }, function(code, signal)
+    if code == 0 then
+      on_exit(table.concat(buffer, ""), code, signal)
+    else
+      on_exit(false, code, signal, buffer)
     end
-  end
-  if not with_text then
-    error "with_text is required"
-    return
-  end
-  local stdout = uv.new_pipe(false)
-  self:api_command("get-text", vim.list_extend({ "--extent", (extent or "screen") }, args or {}), on_exit)
-
-  stdout:read_start(function(err, data)
-    if err then error(err) end
-    if data then with_text(data) end
   end)
+end
+function Kitty:get_text_buffer(extent, args, on_exit)
+  local bufnr
+  return self:get_text_stream(extent, args, {
+    stdout = function(err, data)
+      if not bufnr then
+        vim.cmd.split()
+        vim.cmd.enew()
+        bufnr = vim.api.nvim_get_current_buf()
+      end
+      vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, vim.split(data, "\n"))
+    end,
+  }, on_exit)
 end
 function Kitty:get_selection(reg)
   local cb
@@ -436,10 +468,10 @@ function Kitty:get_selection(reg)
   elseif type(reg) == "function" then
     cb = reg
   end
-  self:get_text("selection", cb, {})
+  self:get_text("selection", {}, cb)
 end
 
-function Kitty:scroll(opts, on_exit, stdio)
+function Kitty:scroll(opts, system_opts, on_exit)
   local amount = opts.amount
   if not amount and opts.till_end then amount = "end" end
   if not amount and opts.till_start then amount = "start" end
@@ -447,35 +479,27 @@ function Kitty:scroll(opts, on_exit, stdio)
   if not amount and opts.down then amount = tostring(opts.down) .. "+" end
   return self:api_command("scroll", {
     amount,
-  }, on_exit, stdio)
+  }, system_opts, on_exit)
 end
-function Kitty:scroll_up(opts, on_exit, stdio)
-  return self:scroll(vim.list_extend(opts or {}, { up = 1 }), on_exit, stdio)
+function Kitty:scroll_up(opts, system_opts, on_exit)
+  return self:scroll(vim.list_extend(opts or {}, { up = 1 }), system_opts, on_exit)
 end
-function Kitty:scroll_down(opts, on_exit, stdio)
-  return self:scroll(vim.list_extend(opts or {}, { down = 1 }), on_exit, stdio)
+function Kitty:scroll_down(opts, system_opts, on_exit)
+  return self:scroll(vim.list_extend(opts or {}, { down = 1 }), system_opts, on_exit)
 end
 Kitty.signal_child = from_api_command "signal-child"
 local json_to_buffer = require("kitty.ls").json_to_buffer
-function Kitty:ls(cb, on_exit, stdio)
+function Kitty:ls(cb, on_exit)
   cb = cb or json_to_buffer or vim.print
-  local stdout
-  if stdio == nil or stdio[2] == nil then
-    stdout = uv.new_pipe(false)
-    stdio = { nil, stdout, nil }
-  else
-    stdout = stdio[2]
-  end
-
-  local handle, pid = self:api_command("ls", { "--all-env-vars" }, on_exit, stdio)
-  stdout:read_start(function(err, data)
-    if err then vim.notify(err, vim.log.levels.ERROR) end
-    if data then
-      local decoded = vim.json.decode(data)
-      cb(decoded, data)
-    end
-  end)
-  return handle, pid
+  return self:api_command("ls", { "--all-env-vars" }, {
+    stdout = function(err, data)
+      if err then vim.notify(err, vim.log.levels.ERROR) end
+      if data then
+        local decoded = vim.json.decode(data, {})
+        cb(decoded, data)
+      end
+    end,
+  }, on_exit)
 end
 Kitty.font_size = from_api_command "set-font-size"
 Kitty.font_up = from_api_command("set-font-size", { "--", "+1" })
