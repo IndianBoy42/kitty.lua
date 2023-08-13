@@ -97,7 +97,7 @@ M.setup = function(opts)
     if not terms.global and (args.args == nil or #args.args == 0) then return M.kitty_attach() end
     if t then
       if args.fargs and #args.fargs > 0 then
-        t:send(args.args .. "\\r")
+        t:send { text = args.args, suffix = "\r" }
       else
         -- TODO:
         t:focus()
@@ -119,7 +119,7 @@ M.setup = function(opts)
     local t = get_terminal(k)
     if t then pcall(function() t:detach(args.fargs and args.fargs[1]) end) end
   end, { nargs = "*" })
-  cmd("KittyList", function(args) vim.print(terms) end, {})
+  cmd("KittyListTerm", function(args) vim.print(terms) end, {})
 
   -- TODO: detect when terminals close
 

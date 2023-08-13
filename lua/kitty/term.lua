@@ -236,6 +236,7 @@ function Kitty:sub_window(o, where)
   end
 
   Sub.open = open_if_not_yet(function(sub, args, system_opts, on_exit)
+    system_opts = system_opts or {}
     if not args and sub.launch_cmd then args = sub.launch_cmd end
     if type(args) == "string" then args = { args } end
     if args then sub.launch_args = vim.list_extend(sub.launch_args, args) end

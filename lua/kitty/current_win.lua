@@ -33,6 +33,7 @@ K.setup = function(cfg)
   vim.api.nvim_create_user_command("KittyFontSize", function(a) K.font_size(a.args) end, { nargs = "?" })
   vim.api.nvim_create_user_command("KittyFontUp", K.font_up, {})
   vim.api.nvim_create_user_command("KittyFontDown", K.font_down, {})
+  vim.api.nvim_create_user_command("KittyLs", K.ls, {})
   vim.api.nvim_create_autocmd("OptionSet", {
     pattern = "guifont",
     callback = guifontsize,

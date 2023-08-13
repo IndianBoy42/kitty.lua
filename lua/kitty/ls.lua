@@ -32,6 +32,7 @@ function methods:focused_tab()
   end
 end
 function methods:window_by_id(id)
+  if type(id) == "string" then id = tonumber(id) end
   return self:all_windows()[id]
   -- for _, os_win in ipairs(self.data) do
   --   for _, tab in ipairs(os_win.tabs) do

@@ -59,7 +59,7 @@ K.setup = function(cfg, cb)
       vim.notify "Creating a new Kitty window"
       if cfg.create_new_win ~= false then K.instance = CW.launch(cfg, cfg.create_new_win or true) end
     else
-      vim.notify("Found Kitty window " .. cfg.attach_to_current_win)
+      vim.notify("Found Kitty window " .. tostring(cfg.attach_to_current_win))
       -- TODO: send the nvim injections
       local win = ls:window_by_id(cfg.attach_to_current_win)
       cfg = vim.tbl_deep_extend("keep", cfg, require("kitty.ls").term_config(win))
