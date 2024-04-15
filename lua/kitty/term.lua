@@ -337,6 +337,7 @@ function Kitty:detach(target, system_opts, on_exit)
   end
   return self:api_command("detach-window", built_args, system_opts, on_exit)
 end
+Kitty.move = Kitty.detach -- Alternate name since detach actually allows moving window/tab
 
 -- function Kitty:send_file()
 --   local filename = vim.fn.expand "%:p"
@@ -364,6 +365,8 @@ function Kitty:send(text, system_opts, on_exit)
       send_text = kutils.get_selection(text.selection)
     elseif text.text then
       send_text = text.text
+    elseif text[1] then
+      send_text = text[1]
     end
   end
 
