@@ -122,14 +122,17 @@ function Make.setup(T)
 
     if type(cmd) == "function" then cmd = cmd(self) end
 
-    cmd = cmd .. "\r"
+    cmd = cmd
     if run_opts.launch_new then
       return self:launch({
         focus_on_run = run_opts.focus_on_run,
         keep_open = run_opts.keep_open,
       }, run_opts.launch_new, { self.shell, "-c", cmd })
     else
-      self:send(cmd)
+      self:send {
+        text = cmd,
+        suffix = "\r",
+      }
       if run_opts.focus_on_run then self:focus() end
     end
     -- TODO: can notify on finish?
