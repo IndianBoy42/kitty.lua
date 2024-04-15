@@ -520,6 +520,8 @@ end
 function Kitty:universal() return self:new { match_arg = "" } end
 function Kitty:recent(i) return self:new { match_arg = "recent:" .. (i or 0) } end
 function Kitty:current_tab() return self:new { is_tab = self.is_tab } end
+-- TODO: Remote control: Allow matching by neighbor of active window. Useful for navigation plugins like vim-kitty-navigator
+-- TODO: matching on set-user-var
 
 function Kitty:new(o)
   o = o or {}

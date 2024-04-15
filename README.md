@@ -7,13 +7,13 @@
 
 ## TODO
 
+- Mirror the toggleterm API to be a drop in replacement
+
 - Async-ify: Rewrite to `vim.system` + `lewis6991/async.nvim` for much cleaner API
 
 - inject the correct nvim environment variables so neovim-remote works
 
 - Integrate with [overseer.nvim](https://github.com/stevearc/overseer.nvim/blob/master/doc/strategies.md)
-
-- Mirror the toggleterm API to be a drop in replacement
 
 - Integrate with: neotest
 

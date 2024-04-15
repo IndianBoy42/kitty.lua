@@ -42,6 +42,7 @@ local function new_terminal(where, opts, args, k)
   end
 
   opts.env_injections = opts.env_injections or {}
+  -- TODO: use `kitty @ set-user-vars`
   if type(k) == "string" then
     opts.env_injections.KITTY_NVIM_NAME = k
   elseif type(k) == "number" then
@@ -126,6 +127,10 @@ M.setup = function(opts)
   -- vim.keymap.set("n", "<leader>mK", KT.run, { desc = "Kitty Run" })
   -- vim.keymap.set("n", "", require("kitty").send_cell, { buffer = 0 })
 end
+
+-- TODO: More convenient terminal management
+-- toggleterm style
+-- move term from other tab to current tab and away
 
 M = setmetatable(M, {
   __index = function(t, k)
