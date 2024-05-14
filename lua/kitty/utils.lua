@@ -106,8 +106,8 @@ function M.api_command(listen_on, match_arg, kitty, cmd, args, system_opts, on_e
         vim.schedule(function()
           if err then error(err) end
           if data then
-            vim.notify(data, vim.log.levels.ERROR)
-            vim.notify("From: " .. cmd .. " - " .. table.concat(cmd, " "), vim.log.levels.WARN)
+            vim.print(data, vim.log.levels.ERROR)
+            vim.print("From: " .. cmd .. " - " .. table.concat(args, " "), vim.log.levels.WARN)
           end
         end)
       end,

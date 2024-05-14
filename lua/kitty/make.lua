@@ -131,10 +131,7 @@ function Make.setup(T)
         keep_open = run_opts.keep_open,
       }, run_opts.launch_new, { self.shell, "-c", cmd })
     else
-      self:send {
-        text = cmd,
-        suffix = "\r",
-      }
+      self:cmd(cmd)
       if run_opts.focus_on_run then self:focus() end
     end
     -- TODO: can notify on finish?
@@ -243,6 +240,11 @@ function Make.setup(T)
         local cmd = "cd " .. cwd .. " && " .. command .. " " .. table.concat(args, " ")
         self.targets.last.cmd = cmd
         -- TODO: add this to the list of targets
+        self.targets[command:match "^[%S]+"] = {
+          cmd = cmd,
+          desc = command,
+          run_opts = run_opts,
+        }
         self:run(cmd, nil, run_opts)
       end,
     }

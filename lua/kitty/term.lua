@@ -354,7 +354,7 @@ function Kitty:send(text, system_opts, on_exit)
   local send_text = text
   local bracketed_paste = self.bracketed_paste
   local prefix, suffix = self.send_text_prefix, self.send_text_suffix
-  if type(text) == "table" and not vim.tbl_islist(text) then
+  if type(text) == "table" and not vim.islist(text) then
     if text.sep then sep = text.sep end
     if text.bracketed_paste ~= nil then bracketed_paste = text.bracketed_paste end
     if text.prefix then prefix = text.prefix end
@@ -370,7 +370,7 @@ function Kitty:send(text, system_opts, on_exit)
     end
   end
 
-  if type(send_text) == "table" and vim.tbl_islist(send_text) then send_text = table.concat(send_text, sep) end
+  if type(send_text) == "table" and vim.islist(send_text) then send_text = table.concat(send_text, sep) end
 
   if bracketed_paste ~= nil then
     prefix = prefix or ""
@@ -390,6 +390,14 @@ function Kitty:send(text, system_opts, on_exit)
   end
 
   return self:api_command("send-text", send, system_opts, on_exit)
+end
+function Kitty:cmd(text, system_opts, on_exit)
+  if type(text) == "string" then
+    text = { text = text, suffix = "\r" }
+  elseif type(text) == "table" then
+    text.suffix = "\r"
+  end
+  return self:send(text, system_opts, on_exit)
 end
 function Kitty:send_operator(args, system_opts, on_exit)
   args = args or {}
@@ -452,7 +460,7 @@ function Kitty:get_text(extent, args, on_exit)
     end
   end)
 end
-function Kitty:get_text_buffer(extent, args, on_exit)
+function Kitty:get_text_to_buffer(extent, args, on_exit)
   local bufnr
   return self:get_text_stream(extent, args, {
     stdout = function(err, data)

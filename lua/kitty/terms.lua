@@ -98,7 +98,7 @@ M.setup = function(opts)
     if not terms.global and (args.args == nil or #args.args == 0) then return M.kitty_attach() end
     if t then
       if args.fargs and #args.fargs > 0 then
-        t:send { text = args.args, suffix = "\r" }
+        t:cmd(args.args)
       else
         -- TODO:
         t:focus()

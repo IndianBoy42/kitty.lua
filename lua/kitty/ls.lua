@@ -84,11 +84,22 @@ local metatbl = {
   __newindex = function() end,
 }
 M.from_json = function(data) return setmetatable({ data = data }, metatbl) end
-M.term_config = function(ls_win)
+M.term_config = function(win)
   -- TODO: adapt the ls information into require'kitty.term'.setup options
   return {
-    title = ls_win.title,
+    title = win.title,
   }
+end
+M.shell = function(win)
+  local o = {}
+  for _, p in ipairs(win.foreground_processes) do
+    vim.print(p)
+    if vim.endswith(p.cmdline[1], "sh") then
+      o.cmdline = p.cmdline
+      o.sh = vim.fs.basename(p.cmdline[1])
+    end
+  end
+  return o
 end
 
 return M
