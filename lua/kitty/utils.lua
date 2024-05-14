@@ -130,6 +130,7 @@ function M.nvim_env_injections(opts)
   end
 end
 
+-- TODO: use vim.fn.getregion
 function M.get_selection(type)
   local feedkeys = vim.api.nvim_feedkeys
   local t = vim.keycode
