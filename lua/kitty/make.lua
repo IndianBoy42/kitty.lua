@@ -120,7 +120,7 @@ function Make.setup(T)
   end
   function T:last_cmd() return self.cmd_history[#self.cmd_history] end
   function T:_run(cmd, run_opts)
-    run_opts = run_opts or self.default_run_opts
+    run_opts = vim.tbl_extend("force", run_opts or {}, self.default_run_opts)
 
     if type(cmd) == "function" then cmd = cmd(self) end
 
@@ -131,7 +131,7 @@ function Make.setup(T)
         keep_open = run_opts.keep_open,
       }, run_opts.launch_new, { self.shell, "-c", cmd })
     else
-      self:cmd(cmd)
+      self:cmd(cmd, run_opts.system_opts)
       if run_opts.focus_on_run then self:focus() end
     end
     -- TODO: can notify on finish?
@@ -187,7 +187,7 @@ function Make.setup(T)
     -- TODO: run dependencies
     self:run_cmd(cmd, {
       prompt = "Chosen Task has no Cmd",
-    }, run_opts or target.run_opts)
+    }, vim.tbl_extend("force", run_opts or {}, target.run_opts or {}))
   end
   function T:make(target, run_opts, filter)
     self:call_or_select(target, "_make", {
@@ -234,18 +234,20 @@ function Make.setup(T)
   end
 
   function T:rust_tools_executor(run_opts)
-    run_opts = run_opts or T.default_run_opts
     return {
       execute_command = function(command, args, cwd)
         local cmd = "cd " .. cwd .. " && " .. command .. " " .. table.concat(args, " ")
         self.targets.last.cmd = cmd
         -- TODO: add this to the list of targets
-        self.targets[command:match "^[%S]+"] = {
+        local target = command:match "^[%S]+"
+        self.targets[target] = {
           cmd = cmd,
           desc = command,
           run_opts = run_opts,
         }
-        self:run(cmd, nil, run_opts)
+        self:make(target)
+        -- TODO: get error output back into quickfix?
+        -- ~/plugins.nvim/rust-tools.nvim/lua/rust-tools/executors/quickfix.lua
       end,
     }
   end
