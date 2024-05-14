@@ -472,6 +472,7 @@ function Kitty:get_selection(reg)
   elseif type(reg) == "function" then
     cb = reg
   end
+  cb = vim.schedule_wrap(cb)
   self:get_text("selection", {}, cb)
 end
 

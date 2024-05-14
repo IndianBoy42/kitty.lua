@@ -85,7 +85,9 @@ function Make.setup(T)
 
       from_input = from_input or nop
       local extra_args = { ... }
-      self.input(opts, function(i) fun(self, from_input(i), unpack(extra_args)) end)
+      self.input(opts, function(i)
+        if vim.trim(i) ~= "" then fun(self, from_input(i), unpack(extra_args)) end
+      end)
     else
       fun(self, arg, ...)
     end
