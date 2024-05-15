@@ -161,11 +161,12 @@ function Make.setup(T)
     -- 0x03 is ^C
     self:send "\x03"
   end
-  function T:_choose_default(target_name)
+  function T:_choose_default(target_name, and_run)
     self.targets.default = self.targets[target_name]
     if self.target_list_cache then self.target_list_cache[1] = self.targets.default end
+    if and_run then self:make "default" end
   end
-  function T:choose_default(target_name)
+  function T:choose_default(target_name, and_run)
     self:call_or_select(target_name, "_choose_default", {
       self:target_list(),
 
@@ -173,20 +174,21 @@ function Make.setup(T)
         prompt = "Choose default for " .. self.title,
         format_item = self.task_choose_format,
       },
-    })
+    }, nil, and_run)
   end
   function T:_make(target, run_opts, remember_cmd)
-    local target_name = target
     if type(target) == "string" then
       target = self.targets[target]
       if not target then vim.notify("No such target: " .. target, vim.log.levels.ERROR) end
+    else
     end
+    local target_name = target.desc
     if target.cmd then
     elseif target[2] and target[2].cmd then
       target = target[2]
     end
     local cmd = target.cmd
-    if not cmd then vim.notify("No command associated: " .. target_name, vim.log.levels.ERROR) end
+    if not cmd then vim.notify("No command associated: " .. (target_name or ""), vim.log.levels.ERROR) end
     self.targets.last.cmd = cmd
     -- TODO: run dependencies
     self:run_cmd(
@@ -206,8 +208,20 @@ function Make.setup(T)
       },
     }, function(i) return i or "default" end, run_opts, remember_cmd)
   end
-  function T:make_default(run_opts) self:make("default", run_opts) end
-  function T:make_last(run_opts) self:make("last", run_opts) end
+  function T:make_default(run_opts, name)
+    if self.targets.default.cmd == nil then
+      self:choose_default(name, true)
+    else
+      self:make("default", run_opts)
+    end
+  end
+  function T:make_last(run_opts)
+    if self.targets.last.cmd == nil then
+      self:make(nil, run_opts)
+    else
+      self:make("last", run_opts)
+    end
+  end
   function T:_add_target(name, target, run_opts)
     self.targets[name] = type(target) == "table" and target
       or {
