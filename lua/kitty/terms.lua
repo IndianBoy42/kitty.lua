@@ -33,29 +33,42 @@ local function get_uuid()
   return "_" .. uuid
 end
 
-local function new_terminal(where, opts, args, k)
+local function new_terminal(where, opts, args, name)
   opts = opts or {}
-  k = k or get_terminal_name(args)
-  local cmd = args and args.fargs
+  local cmd
+  if args and args.fargs then
+    cmd = args.fargs
+  elseif type(args) == "string" then
+    cmd = args
+  else
+    cmd = args
+  end
+  name = name
+    or (type(cmd) == "string" and cmd)
+    or (type(cmd) == "table" and type(cmd[1]) == "string" and cmd[1])
+    or get_terminal_name(args)
   if not cmd or #cmd == 0 then
     -- TODO: something
   end
 
   opts.env_injections = opts.env_injections or {}
   -- TODO: use `kitty @ set-user-vars`
-  if type(k) == "string" then
-    opts.env_injections.KITTY_NVIM_NAME = k
-  elseif type(k) == "number" then
-    opts.env_injections.KITTY_NVIM_NAME = "buf_" .. k
+  if type(name) == "string" then
+    opts.env_injections.KITTY_NVIM_NAME = name
+  elseif type(name) == "number" then
+    opts.env_injections.KITTY_NVIM_NAME = "buf_" .. name
   end
 
   if where == nil then where = true end
-  terms[k] = require("kitty.current_win").launch(opts, where, cmd)
-  terms[get_uuid()] = terms[k]
-  if terms.global == nil then terms.global = terms[k] end
-  return terms[k]
+  terms[name] = require("kitty.current_win").launch(opts, where, cmd)
+  terms[get_uuid()] = terms[name]
+  if terms.global == nil then terms.global = terms[name] end
+  return terms[name]
 end
 M.new_terminal = new_terminal
+M.new_tab = function(opts, args, name) return new_terminal("tab", opts, args, name) end
+M.new_window = function(opts, args, name) return new_terminal("window", opts, args, name) end
+M.new_os_window = function(opts, args, name) return new_terminal("os-window", opts, args, name) end
 
 local attach_opts = {}
 function M.kitty_attach(opts)
@@ -89,9 +102,9 @@ M.setup = function(opts)
     attach_opts = opts.attach
   end
 
-  cmd("KittyTab", function(args) new_terminal("tab", {}, args) end, { nargs = "*" })
-  cmd("KittyWindow", function(args) new_terminal("window", {}, args) end, { nargs = "*" })
-  cmd("KittyNew", function(args) new_terminal("os-window", {}, args) end, { nargs = "*" })
+  cmd("KittyTab", function(args) M.new_tab({}, args) end, { nargs = "*" })
+  cmd("KittyWindow", function(args) M.new_window({}, args) end, { nargs = "*" })
+  cmd("KittyNew", function(args) M.new_os_window({}, args) end, { nargs = "*" })
   cmd("Kitty", function(args)
     local k = get_terminal_name(args)
     local t = get_terminal(k)
