@@ -176,6 +176,7 @@ Kitty.to_arg = setmetatable({}, {
   end,
 })
 
+local where_locations = { "after", "before", "first", "hsplit", "last", "neighbor", "split", "vsplit" }
 function Kitty:sub_window(o, where)
   if where == true then where = self.default_launch_location end
   where = where or self.default_launch_location
@@ -201,6 +202,10 @@ function Kitty:sub_window(o, where)
 
   local open_cwd = Sub.open_cwd
   if open_cwd == nil or open_cwd == "" then open_cwd = "current" end
+  if vim.tbl_contains(where_locations, where, {}) then
+    Sub.split_location = where
+    where = "window"
+  end
   Sub.launch_args = {
     "--window-title",
     Sub.title,
@@ -272,19 +277,12 @@ function Kitty:new_window(o, args)
   if type(o) == "string" and args == nil then args = { o } end
   return self:launch(o, "window", args)
 end
-function Kitty:new_hsplit(o, args)
-  self:goto_layout "splits"
-  if type(o) == "string" and args == nil then args = { o } end
-  if type(args) == "string" then args = { args } end
-  args = vim.list_extend({ "--location=hsplit" }, args or {})
-  return self:launch(o, "window", args)
-end
-function Kitty:new_vsplit(o, args)
-  self:goto_layout "splits"
-  if type(o) == "string" and args == nil then args = { o } end
-  if type(args) == "string" then args = { args } end
-  args = vim.list_extend({ "--location=vsplit" }, args or {})
-  return self:launch(o, "window", args)
+for _, loc in ipairs(where_locations) do
+  Kitty["new_win_" .. loc] = function(self, o, args)
+    self:goto_layout "splits"
+    if type(o) == "string" and args == nil then args = { o } end
+    return self:launch(o, loc, args)
+  end
 end
 function Kitty:new_os_window(o, args)
   if type(o) == "string" and args == nil then args = { o } end
