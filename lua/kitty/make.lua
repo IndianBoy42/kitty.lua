@@ -86,6 +86,7 @@ function Make.setup(T)
       from_input = from_input or nop
       local extra_args = { ... }
       self.input(opts, function(i)
+        if not i then return end
         if vim.trim(i) ~= "" then fun(self, from_input(i), unpack(extra_args)) end
       end)
     else
@@ -101,6 +102,7 @@ function Make.setup(T)
 
       local extra_args = { ... }
       self.select(opts[1], opts[2], function(i)
+        if not i then return end
         from_input = from_input or nop
         fun(self, from_input(i), unpack(extra_args))
       end)
@@ -136,22 +138,24 @@ function Make.setup(T)
     end
     -- TODO: can notify on finish?
   end
+  function T:remember_cmd(i)
+    self.cmd_history[#self.cmd_history + 1] = i
+    self.targets.last_manual.cmd = i
+  end
   function T:run_cmd(cmd, run_opts, remember_cmd)
     self:call_or_input(cmd, "_run", {
       prompt = "Run in " .. self.title,
       default = self:last_cmd(),
     }, function(i)
-      if remember_cmd then remember_cmd(i) end
+      if remember_cmd then
+        remember_cmd(i)
+      else
+        self:remember_cmd(i)
+      end
       return i
     end, run_opts)
   end
-  function T:run(cmd, run_opts, remember_cmd)
-    self:run_cmd(cmd, run_opts, function(i)
-      if remember_cmd then remember_cmd(i) end
-      self.cmd_history[#self.cmd_history + 1] = cmd
-      self.targets.last_manual.cmd = cmd
-    end)
-  end
+  function T:run(cmd, run_opts, remember_cmd) self:run_cmd(cmd, run_opts, remember_cmd) end
   function T:rerun(run_opts) self:run_cmd(self:last_cmd(), nil, run_opts) end
   function T:kill_ongoing()
     -- 0x03 is ^C
@@ -171,7 +175,7 @@ function Make.setup(T)
       },
     })
   end
-  function T:_make(target, run_opts)
+  function T:_make(target, run_opts, remember_cmd)
     local target_name = target
     if type(target) == "string" then
       target = self.targets[target]
@@ -185,18 +189,22 @@ function Make.setup(T)
     if not cmd then vim.notify("No command associated: " .. target_name, vim.log.levels.ERROR) end
     self.targets.last.cmd = cmd
     -- TODO: run dependencies
-    self:run_cmd(cmd, {
-      prompt = "Chosen Task has no Cmd",
-    }, vim.tbl_extend("force", run_opts or {}, target.run_opts or {}))
+    self:run_cmd(
+      cmd,
+      vim.tbl_extend("force", {
+        prompt = "Chosen Task has no Cmd",
+      }, run_opts or {}, target.run_opts or {}),
+      remember_cmd
+    )
   end
-  function T:make(target, run_opts, filter)
+  function T:make(target, run_opts, filter, remember_cmd)
     self:call_or_select(target, "_make", {
       self:target_list(filter),
       {
         prompt = "Run target in " .. self.title,
         format_item = self.task_choose_format,
       },
-    }, function(i) return i or "default" end, run_opts)
+    }, function(i) return i or "default" end, run_opts, remember_cmd)
   end
   function T:make_default(run_opts) self:make("default", run_opts) end
   function T:make_last(run_opts) self:make("last", run_opts) end

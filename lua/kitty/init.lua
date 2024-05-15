@@ -27,7 +27,7 @@ function K.attach_to(cfg, ls)
   local function filter_by_fg(winid, win)
     table.insert(candidates, win)
     for _, p in ipairs(win.foreground_processes) do
-      if vim.endswith(p.cmdline[1], "sh") and vim.fs.normalize(p.cwd) == cwd then return true end
+      if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") and vim.fs.normalize(p.cwd) == cwd then return true end
     end
     return false
   end
@@ -71,7 +71,7 @@ function K.attach_to(cfg, ls)
     -- Recheck filtered out candidates for shells
     for _, win in ipairs(candidates) do
       for _, p in ipairs(win.foreground_processes) do
-        if vim.endswith(p.cmdline[1], "sh") then
+        if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") then
           cfg.attach_to_current_win = win.id
           cfg.cd_to_cwd = cwd
         end

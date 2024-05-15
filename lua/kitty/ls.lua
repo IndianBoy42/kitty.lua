@@ -93,7 +93,6 @@ end
 M.shell = function(win)
   local o = {}
   for _, p in ipairs(win.foreground_processes) do
-    vim.print(p)
     if vim.endswith(p.cmdline[1], "sh") then
       o.cmdline = p.cmdline
       o.sh = vim.fs.basename(p.cmdline[1])
