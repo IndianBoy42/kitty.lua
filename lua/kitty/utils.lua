@@ -96,9 +96,9 @@ function M.build_api_command(listen_on, match_arg, kitty_exe, cmd, args)
   return built_args
 end
 local system = vim.system
-function M.api_command(listen_on, match_arg, kitty, cmd, args, system_opts, on_exit)
+function M.api_command(listen_on, match_arg, kitty_exe, cmd, args, system_opts, on_exit)
   system_opts = system_opts or {}
-  local cmdline = M.build_api_command(listen_on, match_arg, kitty, cmd, args)
+  local cmdline = M.build_api_command(listen_on, match_arg, kitty_exe, cmd, args)
   return system(
     cmdline,
     vim.tbl_extend("keep", system_opts, {
@@ -127,6 +127,24 @@ function M.nvim_env_injections(opts)
       NVIM = vim.v.servername,
       NVIM_PID = vim.fn.getpid(),
     }
+  else
+    return {
+      NVIM_LISTEN_ADDRESS = false,
+      NVIM = false,
+      NVIM_PID = false,
+    }
+  end
+end
+function M.env_injections(env, args)
+  if env then
+  for k, v in pairs(env) do
+    args[#args + 1] = "--env"
+    if v == false then
+      args[#args + 1] = k -- remove
+    else
+      args[#args + 1] = k .. "=" .. v
+    end
+  end
   end
 end
 

@@ -216,19 +216,10 @@ function Kitty:sub_window(o, where)
     "--cwd",
     open_cwd,
   }
+  if not Sub.dont_copy_env then Sub.launch_args[#Sub.launch_args + 1] = "--copy-env" end
   local env = kutils.nvim_env_injections(Sub)
-  if env then
-    for k, v in pairs(env) do
-      Sub.launch_args[#Sub.launch_args + 1] = "--env"
-      Sub.launch_args[#Sub.launch_args + 1] = k .. "=" .. v
-    end
-  end
-  if Sub.env_injections then
-    for k, v in pairs(Sub.env_injections) do
-      Sub.launch_args[#Sub.launch_args + 1] = "--env"
-      Sub.launch_args[#Sub.launch_args + 1] = k .. "=" .. v
-    end
-  end
+  kutils.env_injections(env, Sub.launch_args)
+  kutils.env_injections(Sub.env_injections, Sub.launch_args)
   if not Sub.focus_on_open then Sub.launch_args[#Sub.launch_args + 1] = "--dont-take-focus" end
   if Sub.keep_open then Sub.launch_args[#Sub.launch_args + 1] = "--hold" end
   if Sub.split_location then
@@ -239,7 +230,6 @@ function Kitty:sub_window(o, where)
     Sub.launch_args[#Sub.launch_args + 1] = "--stdin-source"
     Sub.launch_args[#Sub.launch_args + 1] = Sub.stdin_source
   end
-  if not Sub.dont_copy_env then Sub.launch_args[#Sub.launch_args + 1] = "--copy-env" end
 
   Sub.open = open_if_not_yet(function(sub, args, system_opts, on_exit)
     system_opts = system_opts or {}
@@ -261,6 +251,7 @@ function Kitty:sub_window(o, where)
     return handle
   end)
 
+  Sub.launch_where = where
   return Sub
 end
 function Kitty:launch(o, where, args, system_opts, on_exit)
@@ -312,6 +303,13 @@ Kitty.reset_layout = from_api_command("resize-window", { "--axis", "reset" })
 Kitty.toggle_fullscreen = from_api_command("resize-os-window", { "--action", "toggle-fullscreen" })
 Kitty.toggle_maximized = from_api_command("resize-os-window", { "--action", "toggle-maximized" })
 function Kitty:toggle_fullscreen(system_opts, on_exit) self:resize_os_window({}, system_opts, on_exit) end
+-- target can be:
+--  - new-tab
+--  - new-window (os window)
+--  - this-tab (this = current_win)
+--  - string to pass to --target-tab (see kitty docs)
+--  - Kitty terminal object whose tab will be used
+--  - TODO: {new_in = Kitty terminal object}
 function Kitty:detach(target, system_opts, on_exit)
   local built_args = {}
   if self.is_tab then
@@ -330,7 +328,12 @@ function Kitty:detach(target, system_opts, on_exit)
       if type(target) == "string" then
         vim.list_extend(built_args, { "--target-tab", target }) -- target should be SomeTab.match_arg
       else
-        target:append_match_args(built_args, true, "--target-tab")
+        if target.new_in then
+          -- TODO: new tab in that window
+          target.new_in:append_match_args(built_args, true, "--target-tab")
+        else
+          target:append_match_args(built_args, true, "--target-tab")
+        end
       end
     end
   end
@@ -338,16 +341,10 @@ function Kitty:detach(target, system_opts, on_exit)
 end
 Kitty.move = Kitty.detach -- Alternate name since detach actually allows moving window/tab
 
--- function Kitty:send_file()
---   local filename = vim.fn.expand "%:p"
---   local payload = ""
---   local lines = vim.fn.readfile(filename)
---   for _, line in ipairs(lines) do
---     payload = payload .. line .. "\n"
---   end
---   self:send(payload)
--- end
-
+function Kitty:send_key(keys, system_opts, on_exit)
+  -- TODO: map from neovim to kitty
+  return self:api_command("send-key", type(keys) == "table" and keys or { keys }, system_opts, on_exit)
+end
 function Kitty:send(text, system_opts, on_exit)
   local sep = self.text_sep or "\\r"
   local send_text = text
@@ -428,13 +425,6 @@ function Kitty:send_file(from_file, system_opts, on_exit)
   }, system_opts, on_exit)
 end
 
-local termcodes = api.nvim_replace_termcodes
-local function t(k) return termcodes(k, true, true, true) end
-function Kitty:send_key(text)
-  print(text)
-  vim.notify("Unimplemented", vim.log.levels.ERROR, {})
-end
-
 -- https://sw.kovidgoyal.net/kitty/remote-control/#cmdoption-kitty-get-text-extent
 function Kitty:get_text_stream(extent, args, system_opts, on_exit)
   return self:api_command(
@@ -484,24 +474,37 @@ function Kitty:get_selection(reg)
 end
 
 function Kitty:scroll(opts, system_opts, on_exit)
+  if type(opts) == "string" then opts = { amount = opts } end
   local amount = opts.amount
-  if not amount and opts.till_end then amount = "end" end
-  if not amount and opts.till_start then amount = "start" end
-  if not amount and opts.up then amount = tostring(opts.up) .. "-" end
-  if not amount and opts.down then amount = tostring(opts.down) .. "+" end
-  return self:api_command("scroll", {
-    amount,
-  }, system_opts, on_exit)
+  if not amount then
+    if opts.till_end then
+      amount = "end"
+    elseif opts.till_start then
+      amount = "start"
+    elseif opts.up then
+      amount = tostring(opts.up) .. "-"
+    elseif opts.down then
+      amount = tostring(opts.down) .. "+"
+    elseif opts.prompts then
+      if opts.prompts == "top" then
+        return self:api_command("action", { "scroll_prompt_to_top" }, system_opts, on_exit)
+      elseif opts.prompts == "bottom" then
+        return self:api_command("action", { "scroll_prompt_to_bottom" }, system_opts, on_exit)
+      else
+        return self:api_command("action", { "scroll_to_prompt " .. tostring(opts.prompts) }, system_opts, on_exit)
+      end
+    end
+  end
+  return self:api_command("scroll", { amount }, system_opts, on_exit)
 end
-function Kitty:scroll_up(opts, system_opts, on_exit)
-  return self:scroll(vim.list_extend(opts or {}, { up = 1 }), system_opts, on_exit)
-end
-function Kitty:scroll_down(opts, system_opts, on_exit)
-  return self:scroll(vim.list_extend(opts or {}, { down = 1 }), system_opts, on_exit)
-end
+function Kitty:scroll_up(lines, system_opts, on_exit) return self:scroll({ up = lines }, system_opts, on_exit) end
+function Kitty:scroll_down(lines, system_opts, on_exit) return self:scroll({ down = lines }, system_opts, on_exit) end
+
 Kitty.signal_child = from_api_command "signal-child"
-local json_to_buffer = require("kitty.ls").json_to_buffer
+
+local json_to_buffer
 function Kitty:ls(cb, on_exit)
+  json_to_buffer = json_to_buffer or require("kitty.ls").json_to_buffer
   cb = cb or json_to_buffer or vim.print
   return self:api_command("ls", { "--all-env-vars" }, {
     stdout = function(err, data)
@@ -519,6 +522,97 @@ Kitty.font_down = from_api_command("set-font-size", { "--", "-1" })
 Kitty.set_spacing = from_api_command "set-spacing"
 Kitty.set_window_title = from_api_command("set-window-title", { "--temporary" })
 
+-- Run a mappable action
+Kitty.action = from_api_command "action"
+-- Run a kitten
+Kitty.kitten = from_api_command "kitten"
+
+Kitty.reload_config = from_api_command "load-config"
+
+-- TODO: nice API for this
+Kitty.create_marker = from_api_command "create-marker"
+Kitty.remove_marker = from_api_command "remove-marker"
+
+function Kitty:hints(opts, system_opts, on_exit)
+  local opts = opts or {}
+  -- TODO: does - paste to this terminal or that?
+  local args = {
+    "hints",
+    "--type",
+    type,
+  }
+  -- hash, hyperlink, ip, line, linenum, path, regex, url, word
+  if opts.type then
+    args[#args + 1] = "--type"
+    if type(opts.type) == "string" then
+      args[#args + 1] = opts.type or (opts.regex and "regex")
+    elseif type(opts.type) == "table" then
+      if opts.type.url or opts.type.url_prefixes or opts.type.url_exluded then
+        args[#args + 1] = "url"
+        local prefixes = opts.type.url_prefixes or opts.type.prefixes
+        if prefixes then
+          args[#args + 1] = "--url-prefixes"
+          args[#args + 1] = type(prefixes) == "string" and prefixes or table.concat(prefixes, ",")
+        end
+        if opts.type.url_exluded or opts.type.excluded then
+          args[#args + 1] = "--url-excluded-characters"
+          args[#args + 1] = opts.type.url_exluded or opts.type.excluded
+        end
+      elseif opts.type.word then
+        args[#args + 1] = "word"
+        if type(opts.type.word) == "string" then
+          args[#args + 1] = "--word-characters"
+          args[#args + 1] = opts.type.word -- TODO: get this from vim definition?
+        end
+      end
+    end
+  end
+  if opts.yank then
+    args[#args + 1] = "--program"
+    local output = opts.yank
+    if output == "+" or output == "clipboard" then output = "@" end
+    if output == "selection" then output = "*" end
+    args[#args + 1] = output
+  else
+    local where = opts.where or "tab"
+    if opts.type == "linenum" then
+      if opts.program then
+        args[#args + 1] = "--linenum-action"
+        args[#args + 1] = where .. " " .. (opts.program or vim.v.argv[0])
+      else
+        args[#args + 1] = "--linenum-action"
+        args[#args + 1] = where
+      end
+    else
+      if opts.program then
+        args[#args + 1] = "--program"
+        args[#args + 1] = opts.program
+      elseif opts.launch then
+        args[#args + 1] = "--program"
+        args[#args + 1] = "launch --type=" .. where .. " " .. opts.launch
+      end
+    end
+  end
+  -- for linenum must have named groups: path and line
+  if opts.regex then
+    args[#args + 1] = "--regex"
+    args[#args + 1] = opts.regex
+  end
+  if opts.multiple then args[#args + 1] = "--multiple" end
+  if type(opts.multiple) == "string" then -- any or space,newline,empty,json,auto
+    args[#args + 1] = "--multiple-joiner"
+    args[#args + 1] = opts.multiple
+  end
+  if opts.ascending then args[#args + 1] = "--ascending" end
+  if opts.alphabet then
+    args[#args + 1] = "--alphabet"
+    args[#args + 1] = opts.alphabet
+  end
+  vim.list_extend(args, opts.args)
+
+  self:api_command("kitten", args, system_opts, on_exit)
+end
+
 function Kitty:set_match_arg(arg) self.match_arg = arg end
 function Kitty:set_match_arg_from_id(id) self:set_match_arg { id = id } end
 function Kitty:set_match_arg_from_pid(pid)
@@ -532,6 +626,7 @@ function Kitty:current_tab() return self:new { is_tab = self.is_tab } end
 -- TODO: matching on set-user-var
 
 function Kitty:new(o)
+  if o == nil then return Kitty:new(self) end
   o = o or {}
   o.send_text_hooks = o.send_text_hooks and vim.list_extend(o.send_text_hooks, self.send_text_hooks)
   setmetatable(o, self)

@@ -4,6 +4,7 @@ local terms = {}
 M.terminals = terms
 
 local function get_terminal(key)
+  -- TODO: check if it is still open?
   if key == nil then return terms.global end
   if key == 0 then key = vim.api.nvim_get_current_win() end
   if terms[key] then return terms[key] end
@@ -47,6 +48,7 @@ local function new_terminal(where, opts, args, name)
     or (type(cmd) == "string" and cmd)
     or (type(cmd) == "table" and type(cmd[1]) == "string" and cmd[1])
     or get_terminal_name(args)
+
   if not cmd or #cmd == 0 then
     -- TODO: something
   end
@@ -69,6 +71,41 @@ M.new_terminal = new_terminal
 M.new_tab = function(opts, args, name) return new_terminal("tab", opts, args, name) end
 M.new_window = function(opts, args, name) return new_terminal("window", opts, args, name) end
 M.new_os_window = function(opts, args, name) return new_terminal("os-window", opts, args, name) end
+
+local reuse_lib = {
+  focus = function(where, opts, args, name, term) term:focus() end,
+}
+reuse_lib.default = reuse_lib.focus
+local function terminal(where, opts, args, name, reuse)
+  local t = get_terminal(name)
+  if t ~= nil then
+    if t.launch_where ~= where then
+      if where == "os-window" then
+        vim.notify "move os-window"
+        t:detach()
+      elseif where == "tab" then
+        vim.notify "move tab"
+        t:move "new-tab"
+      elseif where == "window" then
+        vim.notify "move window"
+        t:move "this-tab"
+      end
+    end
+    if type(reuse) == "function" then
+      reuse(where, opts, args, name)
+    elseif type(reuse) == "string" then
+      reuse_lib[reuse](where, opts, args, name, t)
+    elseif reuse == nil then
+      reuse_lib.default(where, opts, args, name, t)
+    end
+  else
+    new_terminal(where, opts, args, name)
+  end
+end
+M.terminal = terminal
+M.tab = function(opts, args, name) return terminal("tab", opts, args, name) end
+M.window = function(opts, args, name) return terminal("window", opts, args, name) end
+M.os_window = function(opts, args, name) return terminal("os-window", opts, args, name) end
 
 local attach_opts = {}
 function M.kitty_attach(opts)
