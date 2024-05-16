@@ -83,8 +83,8 @@ function M.append_match_args(args, match_arg, use_window_id, flag)
   end
   return args
 end
-function M.build_api_command(listen_on, match_arg, kitty, cmd, args)
-  local built_args = { kitty, "@", "--to", listen_on, cmd }
+function M.build_api_command(listen_on, match_arg, kitty_exe, cmd, args)
+  local built_args = { kitty_exe, "@", "--to", listen_on, cmd }
   if not vim.tbl_contains(M.api_commands_no_match, cmd) then
     M.append_match_args(
       built_args,
@@ -153,6 +153,13 @@ function M.get_selection(type)
   else
     return vim.api.nvim_buf_get_text(0, start[1] - 1, start[2], finish[1] - 1, finish[2] + 1, {})
   end
+end
+
+function M.kitten()
+  if vim.fn.executable("kitten") == 1 then
+    return "kitten"
+  end
+  return "kitty"
 end
 
 return M

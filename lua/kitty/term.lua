@@ -10,7 +10,7 @@ local Kitty = {
   is_tab = false,
   launch_counter = 0,
   from_id = 1,
-  kitty_client_exe = "kitty", -- Can use kitten instead?
+  kitty_client_exe = kutils.kitten(),
   send_text_hooks = {},
 }
 
