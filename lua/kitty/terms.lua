@@ -80,7 +80,7 @@ function M.kitty_attach(opts)
     local Term = require "kitty.term"
     for id, t in pairs(ls:all_windows()) do
       terms["k" .. id] = Term:new(vim.tbl_deep_extend("keep", {
-        attach_to_current_win = id,
+        attach_to_win = id,
       }, require("kitty.ls").term_config(t)))
       if t.env and t.env.KITTY_NVIM_NAME then terms[t.env.KITTY_NVIM_NAME] = terms["k" .. id] end
     end

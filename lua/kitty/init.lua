@@ -18,7 +18,7 @@ function K.attach_to(cfg, ls)
     if p.cmdline[1] == "nvim" or p.pid == pid then nvim_running_in_kitty = true end
   end
   if not nvim_running_in_kitty then
-    cfg.attach_to_current_win = focused.win.id
+    cfg.attach_to_win = focused.win.id
     vim.notify("Not running in kitty", vim.log.levels.WARN)
     return
   end
@@ -34,32 +34,32 @@ function K.attach_to(cfg, ls)
 
   -- TODO: can simplify: sort all windows and then search through in one loop
   -- Get previous active window in focused tab
-  if not cfg.attach_to_current_win and cfg.attach_to_existing_kt_win then
+  if not cfg.attach_to_win and cfg.attach_to_existing_kt_win then
     for _, winid in ipairs(focused.tab.active_window_history) do
       local win = ls:window_by_id(winid)
-      if winid ~= focused.win.id and win and filter_by_fg(winid, win) then cfg.attach_to_current_win = winid end
+      if winid ~= focused.win.id and win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
     end
   end
   -- Find another existing tab in the current OS window
-  if not cfg.attach_to_current_win and cfg.attach_to_existing_tab then
+  if not cfg.attach_to_win and cfg.attach_to_existing_tab then
     for _, tab in ipairs(focused.os_win.tabs) do
       if not tab.is_focused then
         for _, winid in ipairs(tab.active_window_history) do
           local win = ls:window_by_id(winid)
-          if win and filter_by_fg(winid, win) then cfg.attach_to_current_win = winid end
+          if win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
         end
       end
     end
   end
   -- Find another existing OS window
-  if not cfg.attach_to_current_win and cfg.attach_to_existing_os_win then
+  if not cfg.attach_to_win and cfg.attach_to_existing_os_win then
     for _, os_win in ipairs(ls.data) do
       if not os_win.is_focused then
         for _, tab in ipairs(os_win.tabs) do
           -- if tab.is_active then
           for _, winid in ipairs(tab.active_window_history) do
             local win = ls:window_by_id(winid)
-            if win and filter_by_fg(winid, win) then cfg.attach_to_current_win = winid end
+            if win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
           end
           -- end
         end
@@ -67,12 +67,12 @@ function K.attach_to(cfg, ls)
     end
   end
 
-  if not cfg.attach_to_current_win then
+  if not cfg.attach_to_win then
     -- Recheck filtered out candidates for shells
     for _, win in ipairs(candidates) do
       for _, p in ipairs(win.foreground_processes) do
         if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") then
-          cfg.attach_to_current_win = win.id
+          cfg.attach_to_win = win.id
           cfg.cd_to_cwd = cwd
         end
       end
@@ -116,18 +116,18 @@ K.setup = function(cfg, cb)
 
     if not focused then
       -- TODO: is this the best idea? probably not
-      cfg.attach_to_current_win = kutils.current_win_id()
+      cfg.attach_to_win = kutils.current_win_id()
     end
 
     K.attach_to(cfg, ls)
 
     -- Couldn't find any existing window
-    if not cfg.attach_to_current_win then
+    if not cfg.attach_to_win then
       vim.notify "Creating a new Kitty window"
       if cfg.create_new_win ~= false then K.instance = CW.launch(cfg, cfg.create_new_win or true) end
     else
-      vim.notify("Found Kitty window " .. tostring(cfg.attach_to_current_win))
-      local win = ls:window_by_id(cfg.attach_to_current_win)
+      vim.notify("Found Kitty window " .. tostring(cfg.attach_to_win))
+      local win = ls:window_by_id(cfg.attach_to_win)
       local L = require "kitty.ls"
       cfg = vim.tbl_deep_extend("keep", cfg, L.term_config(win))
       K.instance = require("kitty.term"):new(cfg)
@@ -164,7 +164,7 @@ K.attach_all = function(ls, cfg)
   cfg = cfg or {}
   for id, t in pairs(ls:all_windows()) do
     terms[id] = Term:new(vim.tbl_deep_extend("keep", {
-      attach_to_current_win = id,
+      attach_to_win = id,
     }, type(cfg) == "table" and cfg or cfg(t)))
   end
   return terms

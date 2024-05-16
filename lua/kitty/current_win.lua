@@ -1,7 +1,7 @@
 local K = {}
 local defaults = {
   title = "Kitty-current-win",
-  attach_to_current_win = true,
+  attach_to_win = true,
 }
 K.setup = function(cfg)
   cfg = vim.tbl_extend("keep", cfg or {}, defaults)

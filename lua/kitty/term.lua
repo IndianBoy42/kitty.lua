@@ -187,7 +187,7 @@ function Kitty:sub_window(o, where)
     o.title = self.title .. "-" .. self.launch_counter
     self.launch_counter = self.launch_counter + 1
   end
-  o.attach_to_current_win = false
+  o.attach_to_win = false
   o.from_id = nil
   o.is_opened = false
   vim.tbl_extend("keep", o, {
@@ -539,12 +539,13 @@ function Kitty:new(o)
 
   -- Setup stuff
   if type(o.listen_on) == "function" then o.listen_on = o.listen_on() end
-  if o.attach_to_current_win then
+  if o.attach_to_win then
     o.listen_on = kutils.current_win_listen_on()
-    o.from_id = type(o.attach_to_current_win) == "boolean" and kutils.current_win_id() or o.attach_to_current_win
+    o.from_id = o.attach_to_win
+    if o.attach_to_win == true or o.attach_to_win == "current" then o.from_id = kutils.current_win_id() end
     o.is_opened = true
     o.open = function(...) end
-    o.attach_to_current_win = nil
+    o.attach_to_win = nil
   end
   if o.from_id then
     o:set_match_arg_from_id(o.from_id)
