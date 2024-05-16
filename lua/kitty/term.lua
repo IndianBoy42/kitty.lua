@@ -239,6 +239,7 @@ function Kitty:sub_window(o, where)
     Sub.launch_args[#Sub.launch_args + 1] = "--stdin-source"
     Sub.launch_args[#Sub.launch_args + 1] = Sub.stdin_source
   end
+  if not Sub.dont_copy_env then Sub.launch_args[#Sub.launch_args + 1] = "--copy-env" end
 
   Sub.open = open_if_not_yet(function(sub, args, system_opts, on_exit)
     system_opts = system_opts or {}
