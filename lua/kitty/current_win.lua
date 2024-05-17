@@ -1,4 +1,5 @@
 local K = {}
+local kutils = require "kitty.utils"
 local defaults = {
   title = "Kitty-current-win",
   attach_to_win = true,
@@ -11,18 +12,7 @@ K.setup = function(cfg)
   K.instance = KT
 
   -- Create the illusion of the global singleton, so can use . rather than :
-  setmetatable(K, {
-    __index = function(m, k)
-      local ret = KT[k]
-      if type(ret) == "function" then
-        local f = function(...) return ret(KT, ...) end
-        m[k] = f
-        return f
-      else
-        return ret
-      end
-    end,
-  })
+  kutils.staticify(KT, K)
 
   -- TODO: mirror guifont? guifb, guibg
   local guifontsize = function()
@@ -41,6 +31,37 @@ K.setup = function(cfg)
 
   K.setup = function(_) return K end
 
+  vim.api.nvim_create_autocmd("Signal", {
+    group = vim.api.nvim_create_augroup("__signal_kitty_refocus", {}),
+    pattern = "SIGUSR1",
+    callback = function() K.focus() end,
+  })
+
   return K
 end
+
+local uv = vim.uv
+K.notify = function()
+  local pipe
+  if K.pipe then
+    pipe = K.pipe
+  else
+    K.pipe = uv.new_pipe(true)
+    K.pipe:bind(K.notify_pipe_name or "/tmp/kitty-nvim-current-win")
+    K.pipe:listen(128, function(err)
+      if err then error(err) end
+      K.pipe:read_start(vim.schedule_wrap(function(err, data)
+        if err then
+          -- handle read error
+          error(err)
+        elseif data then
+          -- handle data
+        else
+          -- handle disconnect
+        end
+      end))
+    end)
+  end
+end
+
 return K

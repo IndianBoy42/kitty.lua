@@ -123,10 +123,10 @@ K.setup = function(cfg, cb)
 
     -- Couldn't find any existing window
     if not cfg.attach_to_win then
-      vim.notify "Creating a new Kitty window"
+      -- vim.notify("Creating a new Kitty window", vim.log.levels.INFO)
       if cfg.create_new_win ~= false then K.instance = CW.launch(cfg, cfg.create_new_win or true) end
     else
-      vim.notify("Found Kitty window " .. tostring(cfg.attach_to_win))
+      -- vim.notify("Found Kitty window " .. tostring(cfg.attach_to_win), vim.log.levels.INFO)
       local win = ls:window_by_id(cfg.attach_to_win)
       local L = require "kitty.ls"
       cfg = vim.tbl_deep_extend("keep", cfg, L.term_config(win))
@@ -139,18 +139,7 @@ K.setup = function(cfg, cb)
 
     if K.instance then K.setup = function(_) return K end end
 
-    setmetatable(K, {
-      __index = function(m, k)
-        local ret = K.instance[k]
-        if type(ret) == "function" then
-          local f = function(...) return ret(K.instance, ...) end
-          m[k] = f
-          return f
-        else
-          return ret
-        end
-      end,
-    })
+    kutils.staticify(K.instance, K)
 
     -- K.set_window_title(K.title)
 

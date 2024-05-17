@@ -9,16 +9,9 @@ function Make.find_build_file(pattern, args)
 end
 
 function Make.from_command(cmd, parse)
-  return system(cmd, {
-    stdout = function(err, data)
-      if err then
-        vim.notify("Error running command: " .. err, vim.log.levels.ERROR)
-        return
-      end
-
-      if data then parse(data) end
-    end,
-  }, function() end)
+  return system(cmd, {}, function(out)
+    if out.code == 0 then parse(out.stdout) end
+  end)
 end
 
 -- Append commands to self.targets
@@ -34,6 +27,7 @@ function Make.setup(T)
     last = { desc = "Last Run Task" },
     -- on_save = { desc = "Will Run on Save" }, -- TODO: auto_on_save commands
     -- TODO: combo tasks: pre and post
+    -- TODO: output processors
   }
   T.select = T.select or vim.ui.select
   T.input = T.input or vim.ui.input
@@ -134,6 +128,7 @@ function Make.setup(T)
       }, run_opts.launch_new, { self.shell, "-c", cmd })
     else
       self:cmd(cmd, run_opts.system_opts)
+      -- TODO: get the output to quickfix list
       if run_opts.focus_on_run then self:focus() end
     end
     -- TODO: can notify on finish?
@@ -274,6 +269,14 @@ function Make.setup(T)
     }
   end
   function T:make_cmd(name)
+    local targets = vim.tbl_keys(self.targets)
+    for i, t in ipairs(targets) do
+      if t == "last" then
+        local tmp = targets[1]
+        targets[1] = t
+        targets[i] = tmp
+      end
+    end
     vim.api.nvim_create_user_command(name, function(args)
       if #args.fargs == 0 then
         self:make "default"
@@ -282,7 +285,7 @@ function Make.setup(T)
       end
     end, {
       nargs = "?",
-      complete = function() return vim.tbl_keys(self.targets) end,
+      complete = require("kitty.cmd").matcher(vim.tbl_keys(self.targets)),
     })
   end
 

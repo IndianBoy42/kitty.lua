@@ -1,6 +1,7 @@
 local M = {}
 -- TODO: save this information to sessions?
 local terms = {}
+local kutils = require "kitty.utils"
 M.terminals = terms
 
 local function get_terminal(key)
@@ -73,34 +74,39 @@ M.new_window = function(opts, args, name) return new_terminal("window", opts, ar
 M.new_os_window = function(opts, args, name) return new_terminal("os-window", opts, args, name) end
 
 local reuse_lib = {
-  focus = function(where, opts, args, name, term) term:focus() end,
+  focus = function(where, opts, args, name, term)
+    term:focus()
+    -- TODO: if this fails then we launch a new terminal
+    if false then return false end
+    return true
+  end,
 }
 reuse_lib.default = reuse_lib.focus
 local function terminal(where, opts, args, name, reuse)
   local t = get_terminal(name)
   if t ~= nil then
+    local ok = true
     if t.launch_where ~= where then
       if where == "os-window" then
-        vim.notify "move os-window"
-        t:detach()
+        ok = ok and t:detach()
       elseif where == "tab" then
-        vim.notify "move tab"
-        t:move "new-tab"
+        ok = ok and t:move "new-tab"
       elseif where == "window" then
-        vim.notify "move window"
-        t:move "this-tab"
+        ok = ok and t:move "this-tab"
       end
     end
-    if type(reuse) == "function" then
-      reuse(where, opts, args, name)
-    elseif type(reuse) == "string" then
-      reuse_lib[reuse](where, opts, args, name, t)
-    elseif reuse == nil then
-      reuse_lib.default(where, opts, args, name, t)
+    if ok then
+      if type(reuse) == "function" then
+        ok = ok and reuse(where, opts, args, name)
+      elseif type(reuse) == "string" then
+        ok = ok and reuse_lib[reuse](where, opts, args, name, t)
+      elseif reuse == nil then
+        ok = ok and reuse_lib.default(where, opts, args, name, t)
+      end
     end
-  else
-    new_terminal(where, opts, args, name)
+    if ok then return end
   end
+  new_terminal(where, opts, args, name)
 end
 M.terminal = terminal
 M.tab = function(opts, args, name) return terminal("tab", opts, args, name) end

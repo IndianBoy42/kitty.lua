@@ -106,18 +106,18 @@ function M.api_command(listen_on, match_arg, kitty_exe, cmd, args, system_opts, 
         vim.schedule(function()
           if err then error(err) end
           if data then
-            vim.print(data, vim.log.levels.ERROR)
             vim.print("From: " .. cmd .. " - " .. table.concat(args, " "), vim.log.levels.WARN)
+            vim.print(data, vim.log.levels.ERROR)
           end
         end)
       end,
+      text = true,
     }),
     on_exit
   )
 end
-function M.api_command_blocking(listen_on, match_arg, cmd, args_)
-  local cmdline = M.build_api_command(listen_on, match_arg, cmd, args_)
-  return vim.fn.system(cmdline)
+function M.api_command_blocking(listen_on, match_arg, kitty_exe, cmd, args, system_opts, on_exit)
+  return M.api_command(listen_on, match_arg, kitty_exe, cmd, args, system_opts):wait()
 end
 
 function M.nvim_env_injections(opts)
@@ -137,14 +137,14 @@ function M.nvim_env_injections(opts)
 end
 function M.env_injections(env, args)
   if env then
-  for k, v in pairs(env) do
-    args[#args + 1] = "--env"
-    if v == false then
-      args[#args + 1] = k -- remove
-    else
-      args[#args + 1] = k .. "=" .. v
+    for k, v in pairs(env) do
+      args[#args + 1] = "--env"
+      if v == false then
+        args[#args + 1] = k -- remove
+      else
+        args[#args + 1] = k .. "=" .. v
+      end
     end
-  end
   end
 end
 
@@ -174,10 +174,23 @@ function M.get_selection(type)
 end
 
 function M.kitten()
-  if vim.fn.executable("kitten") == 1 then
-    return "kitten"
-  end
+  if vim.fn.executable "kitten" == 1 then return "kitten" end
   return "kitty"
+end
+
+function M.staticify(inst, K)
+  return setmetatable(K or {}, {
+    __index = function(m, k)
+      local ret = inst[k]
+      if type(ret) == "function" then
+        local f = function(...) return ret(inst, ...) end
+        m[k] = f
+        return f
+      else
+        return ret
+      end
+    end,
+  })
 end
 
 return M
