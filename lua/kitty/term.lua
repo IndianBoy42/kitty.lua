@@ -479,8 +479,9 @@ function Kitty:get_text_to_qflist(extent, args, system_opts, on_exit)
 end
 function Kitty:get_selection(reg)
   local cb
-  if reg == nil or type(reg) == "string" then
-    cb = function(data) vim.fn.setreg(reg or '"', data) end
+  if reg == nil or type(reg) == "string" or reg == true then
+    if type(reg) ~= "string" or reg == "register" then reg = vim.v.register end
+    cb = function(data) vim.fn.setreg(reg or '"', data:sub(1, -2)) end
   elseif type(reg) == "function" then
     cb = reg
   end
@@ -569,20 +570,29 @@ local customize_hints_processing = setmetatable({}, {
 })
 local sh = setmetatable({}, {
   __index = function(t, k)
-    t[k] = vim.api.nvim_get_runtime_file("sh/kitty/" .. k .. ".sh", false)[1]
-    return k
+    local v = vim.api.nvim_get_runtime_file("sh/kitty/" .. k .. ".sh", false)[1]
+    t[k] = v
+    return v
   end,
 })
+function Kitty:sh(name, launch)
+  local shcmd = "sh " .. sh[name] .. " " .. vim.fn.getpid()
+  if launch then
+    return "launch --type=background " .. shcmd
+  else
+    return shcmd
+  end
+end
+function Kitty:wakeup(launch) return self:sh("wakeup", launch) end
 function Kitty:hints(opts, system_opts, on_exit)
   opts = opts or {}
   -- TODO: does - paste to this terminal or that?
   local args = {
     "hints",
   }
-  if false and not opts.stay_in_terminal then
+  if not opts.stay_in_terminal then
     args[#args + 1] = "--program"
-    -- args[#args + 1] = "launch --type=tab nvim" -- refocus by flatten... maybe
-    args[#args + 1] = "launch --type=background sh " .. sh.notify .. " " .. require("kitty.current_win").notif
+    args[#args + 1] = self:wakeup(true)
   end
   -- hash, hyperlink, ip, line, linenum, path, regex, url, word
   if opts.type then
@@ -610,55 +620,90 @@ function Kitty:hints(opts, system_opts, on_exit)
       end
     end
   end
-  local function yank_to(output)
-    args[#args + 1] = "--program"
-    if output == '"' then
+
+  local function yank_to(output, paste)
+    local reg
+    if type(output) == "function" then
+      local cb = output
       output = "@"
-      vim.notify "Unimplemented"
-      if false then
+      local old = vim.fn.getreg "+"
+      vim.api.nvim_create_autocmd("FocusGained", {
+        group = vim.api.nvim_create_augroup("kitty-hints-focus-gained", { clear = true }),
+        pattern = "*",
+        once = true,
+        callback = function()
+          local v = vim.fn.getreg "+"
+          vim.fn.setreg("+", old)
+          cb(v)
+        end,
+      })
+    else
+      if output == true then output = "register" end
+      local on_focus_gained
+      if output == "register" then output = vim.v.register end
+      if not vim.tbl_contains({ "@", "+", "*" }, output) and #output == 1 then
+        output = "@"
         local old = vim.fn.getreg "+"
-        local __on_exit = on_exit
-        on_exit = function(...)
+        on_focus_gained = function()
           vim.fn.setreg('"', vim.fn.getreg "+")
           vim.fn.setreg("+", old)
-          __on_exit(...)
         end
+        reg = '"'
+      elseif output == "+" or output == "clipboard" or output == "@" then
+        output = "@"
+        reg = "+"
+      elseif output == "selection" then
+        output = "*"
+        reg = "*"
+      else
+        error("Invalid output register for yank/paste: " .. output)
       end
-    elseif output == "+" or output == "clipboard" then
-      output = "@"
-    elseif output == "selection" then
-      output = "*"
+      if on_focus_gained or paste then
+        vim.api.nvim_create_autocmd("FocusGained", {
+          group = vim.api.nvim_create_augroup("kitty-hints-focus-gained", { clear = true }),
+          pattern = "*",
+          once = true,
+          callback = function()
+            on_focus_gained()
+            if paste then vim.schedule(function() vim.feedkeys('"' .. reg .. "p", "m") end) end
+          end,
+        })
+      end
     end
+    args[#args + 1] = "--program"
     args[#args + 1] = output
   end
-  if opts.yank then
-    yank_to(opts.yank)
-  elseif opts.paste then
-    vim.notify "Unimplemented"
-    if false then
-      local __on_exit = on_exit
-      on_exit = function(...)
-        vim.api.nvim_feedkeys('"' .. opts.paste .. "p", "m")
-        __on_exit(...)
+  local function program(prg, default)
+    if prg.yank or prg.paste then
+      vim.print(prg)
+      yank_to(prg.yank or prg.paste, not not prg.paste)
+    else
+      local where = prg.where or "self"
+      if prg.type == "linenum" then
+        args[#args + 1] = "--linenum-action"
+        args[#args + 1] = where
+        if prg.program then args[#args] = where .. " " .. (prg.program or vim.v.argv[0]) end
+      else
+        if prg.program then
+          args[#args + 1] = "--program"
+          args[#args + 1] = type(prg.program) == "string" and prg.program or "default"
+        elseif prg.launch then
+          args[#args + 1] = "--program"
+          args[#args + 1] = "launch --type=" .. where .. " " .. prg.launch
+        elseif default ~= false then
+          args[#args + 1] = "--program"
+          args[#args + 1] = "@"
+        end
       end
     end
-    yank_to(opts.paste)
-  else
-    local where = opts.where or "self"
-    if opts.type == "linenum" then
-      args[#args + 1] = "--linenum-action"
-      args[#args + 1] = where
-      if opts.program then args[#args] = where .. " " .. (opts.program or vim.v.argv[0]) end
-    else
-      if opts.program then
-        args[#args + 1] = "--program"
-        args[#args + 1] = opts.program
-      elseif opts.launch then
-        args[#args + 1] = "--program"
-        args[#args + 1] = "launch --type=" .. where .. " " .. opts.launch
+    if prg.extra_programs then
+      program(prg.extra_programs, false)
+      for _, program in ipairs(prg.extra_programs) do
+        program(program, false)
       end
     end
   end
+  program(opts)
   -- for linenum must have named groups: path and line
   if opts.regex then
     args[#args + 1] = "--regex"
@@ -684,7 +729,9 @@ function Kitty:hints(opts, system_opts, on_exit)
     args[#args + 1] = opts.custom_proc
   end
 
-  self:api_command("kitten", args, system_opts, on_exit)
+  self:api_command("kitten", args, system_opts, function(out)
+    if out.code == 0 then self:focus({}, on_exit) end
+  end)
 end
 
 function Kitty:set_match_arg(arg) self.match_arg = arg end
