@@ -9,75 +9,78 @@ local defaults = {
 }
 
 function K.attach_to(cfg, ls)
-  local focused = ls:focused_window()
+  local function inner()
+    local focused = ls:focused_window()
 
-  local pid = vim.fn.getpid()
-  local cwd = vim.fs.normalize(vim.loop.cwd())
-  local nvim_running_in_kitty = false
-  for _, p in ipairs(focused.win.foreground_processes) do
-    if p.cmdline[1] == "nvim" or p.pid == pid then nvim_running_in_kitty = true end
-  end
-  if not nvim_running_in_kitty then
-    cfg.attach_to_win = focused.win.id
-    vim.notify("Not running in kitty", vim.log.levels.WARN)
-    return
-  end
-
-  local candidates = {}
-  local function filter_by_fg(winid, win)
-    table.insert(candidates, win)
-    for _, p in ipairs(win.foreground_processes) do
-      if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") and vim.fs.normalize(p.cwd) == cwd then return true end
+    local pid = vim.fn.getpid()
+    local cwd = vim.fs.normalize(vim.loop.cwd())
+    local nvim_running_in_kitty = false
+    for _, p in ipairs(focused.win.foreground_processes) do
+      if p.cmdline[1] == "nvim" or p.pid == pid then nvim_running_in_kitty = true end
     end
-    return false
-  end
-
-  -- TODO: can simplify: sort all windows and then search through in one loop
-  -- Get previous active window in focused tab
-  if not cfg.attach_to_win and cfg.attach_to_existing_kt_win then
-    for _, winid in ipairs(focused.tab.active_window_history) do
-      local win = ls:window_by_id(winid)
-      if winid ~= focused.win.id and win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
+    if not nvim_running_in_kitty then
+      cfg.attach_to_win = focused.win.id
+      return
     end
-  end
-  -- Find another existing tab in the current OS window
-  if not cfg.attach_to_win and cfg.attach_to_existing_tab then
-    for _, tab in ipairs(focused.os_win.tabs) do
-      if not tab.is_focused then
-        for _, winid in ipairs(tab.active_window_history) do
-          local win = ls:window_by_id(winid)
-          if win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
-        end
+
+    local candidates = {}
+    local function filter_by_fg(winid, win)
+      table.insert(candidates, win)
+      for _, p in ipairs(win.foreground_processes) do
+        if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") and vim.fs.normalize(p.cwd) == cwd then return true end
+      end
+      return false
+    end
+
+    -- TODO: can simplify: sort all windows and then search through in one loop
+    -- Get previous active window in focused tab
+    if not cfg.attach_to_win and cfg.attach_to_existing_kt_win then
+      for _, winid in ipairs(focused.tab.active_window_history) do
+        local win = ls:window_by_id(winid)
+        if winid ~= focused.win.id and win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
       end
     end
-  end
-  -- Find another existing OS window
-  if not cfg.attach_to_win and cfg.attach_to_existing_os_win then
-    for _, os_win in ipairs(ls.data) do
-      if not os_win.is_focused then
-        for _, tab in ipairs(os_win.tabs) do
-          -- if tab.is_active then
+    -- Find another existing tab in the current OS window
+    if not cfg.attach_to_win and cfg.attach_to_existing_tab then
+      for _, tab in ipairs(focused.os_win.tabs) do
+        if not tab.is_focused then
           for _, winid in ipairs(tab.active_window_history) do
             local win = ls:window_by_id(winid)
             if win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
           end
-          -- end
+        end
+      end
+    end
+    -- Find another existing OS window
+    if not cfg.attach_to_win and cfg.attach_to_existing_os_win then
+      for _, os_win in ipairs(ls.data) do
+        if not os_win.is_focused then
+          for _, tab in ipairs(os_win.tabs) do
+            -- if tab.is_active then
+            for _, winid in ipairs(tab.active_window_history) do
+              local win = ls:window_by_id(winid)
+              if win and filter_by_fg(winid, win) then cfg.attach_to_win = winid end
+            end
+            -- end
+          end
+        end
+      end
+    end
+
+    if not cfg.attach_to_win then
+      -- Recheck filtered out candidates for shells
+      for _, win in ipairs(candidates) do
+        for _, p in ipairs(win.foreground_processes) do
+          if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") then
+            cfg.attach_to_win = win.id
+            cfg.cd_to_cwd = cwd
+          end
         end
       end
     end
   end
 
-  if not cfg.attach_to_win then
-    -- Recheck filtered out candidates for shells
-    for _, win in ipairs(candidates) do
-      for _, p in ipairs(win.foreground_processes) do
-        if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") then
-          cfg.attach_to_win = win.id
-          cfg.cd_to_cwd = cwd
-        end
-      end
-    end
-  end
+  if not pcall(inner) then vim.defer_fn(function() K.attach_to(cfg, ls) end, 200) end
 end
 
 local function inject_env(sh, k, env, value)
