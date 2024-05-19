@@ -50,16 +50,27 @@ function Kitty:append_match_args(args, use_window_id, flag)
   return kutils.append_match_args(args, self.match_arg, use_window_id, flag)
 end
 
-function Kitty:close_on_leave(evt)
+function Kitty:close_on_leave(evt, wait)
   vim.schedule(function()
+    local close
     api.nvim_create_autocmd(evt or "VimLeavePre", {
       callback = function()
-        -- vim.schedule_wrap(function()
+        -- vim.schedule(function()
         vim.notify("Closing Kitty: " .. self.title, vim.log.levels.INFO)
-        self:close_blocking()
+        close = self:close()
+        if wait then close:wait() end
         -- end)
       end,
     })
+    if not evt or not wait then
+      api.nvim_create_autocmd(evt or "VimLeave", {
+        callback = function()
+          -- vim.schedule(function()
+          close:wait() -- FIXME: unnecessary?
+          -- end)
+        end,
+      })
+    end
   end)
 end
 
