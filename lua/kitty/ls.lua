@@ -1,11 +1,10 @@
 -- Helpers for querying/using the output of kitty @ ls
 local M = {}
 local meta_M = {}
+local kutils = require "kitty.utils"
 M = setmetatable(M, meta_M)
 M.json_to_buffer = vim.schedule_wrap(function(_, raw)
-  vim.cmd.tabnew()
-  vim.api.nvim_buf_set_lines(0, 0, 0, false, vim.split(raw, "\n"))
-  vim.opt.filetype = "json"
+  kutils.dump_to_buffer("tab", raw, function() vim.opt.filetype = "json" end)
 end)
 
 local function with_cache(tbl, key, fn)

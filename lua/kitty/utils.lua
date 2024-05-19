@@ -193,4 +193,22 @@ function M.staticify(inst, K)
   })
 end
 
+function M.dump_to_buffer(bufnr, data, cb)
+  if type(bufnr) == "function" then bufnr = bufnr() end
+  if bufnr == nil then
+    vim.cmd.vsplit() -- TODO: customize, use nvim_open_win
+    vim.cmd.enew()
+    bufnr = vim.api.nvim_get_current_buf()
+  elseif bufnr == "tab" then
+    vim.cmd.tabnew()
+  end
+  if cb then
+    cb() -- nvim_buf_call
+  end
+  if type(data) == "function" then data = data() end
+  if type(data) == "string" then data = vim.split(data, "\n") end
+  vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, data)
+  return bufnr, data
+end
+
 return M

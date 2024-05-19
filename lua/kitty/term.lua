@@ -448,11 +448,8 @@ function Kitty:get_text_to_buffer(extent, args, system_opts, on_exit)
     vim.schedule_wrap(function(out)
       if out.code == 0 then
         if out.stdout then
-          vim.cmd.vsplit() -- TODO: customize
-          vim.cmd.enew()
-          local bufnr = vim.api.nvim_get_current_buf()
-          out.lines = vim.split(out.stdout, "\n")
-          vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, out.lines)
+          local b, l = kutils.dump_to_buffer(nil, out.stdout)
+          out.lines = l
           on_exit(out)
         end
       else
