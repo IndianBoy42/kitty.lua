@@ -82,31 +82,40 @@ local reuse_lib = {
   end,
 }
 reuse_lib.default = reuse_lib.focus
+local where_map = { ["os-window"] = "new-window", ["tab"] = "new-tab", ["window"] = "this-tab" }
 local function terminal(where, opts, args, name, reuse)
   local t = get_terminal(name)
   if t ~= nil then
-    local ok = true
+    local function __reuse(out)
+      vim.print(out)
+      -- TODO: more specific on code?
+      if out.code == 0 then
+        if type(reuse) == "function" then
+          reuse(where, opts, args, name, t)
+        elseif type(reuse) == "string" then
+          reuse_lib[reuse](where, opts, args, name, t)
+        elseif reuse == nil then
+          reuse_lib.default(where, opts, args, name, t)
+        end
+        return t
+      else
+        -- TODO: try this out
+        if true then
+          t:reopen(args):wait()
+          return t
+        end
+        return new_terminal(where, opts, args, name)
+      end
+    end
     if t.launch_where ~= where then
-      if where == "os-window" then
-        ok = ok and t:detach()
-      elseif where == "tab" then
-        ok = ok and t:move "new-tab"
-      elseif where == "window" then
-        ok = ok and t:move "this-tab"
-      end
+      t = __reuse(t:move(where_map[where] or where, {}):wait()) -- blocking is just easier here
+    else
+      t = __reuse(t:ls_match(true, function() end):wait()) -- blocking is just easier here
     end
-    if ok then
-      if type(reuse) == "function" then
-        ok = ok and reuse(where, opts, args, name)
-      elseif type(reuse) == "string" then
-        ok = ok and reuse_lib[reuse](where, opts, args, name, t)
-      elseif reuse == nil then
-        ok = ok and reuse_lib.default(where, opts, args, name, t)
-      end
-    end
-    if ok then return end
+  else
+    t = new_terminal(where, opts, args, name)
   end
-  new_terminal(where, opts, args, name)
+  return t
 end
 M.terminal = terminal
 M.tab = function(opts, args, name) return terminal("tab", opts, args, name) end
@@ -120,6 +129,7 @@ function M.kitty_attach(opts)
     terms.global = K.instance
 
     -- TODO: keep polling to update the terms
+    -- or detect failing commands automatically
     local Term = require "kitty.term"
     for id, t in pairs(ls:all_windows()) do
       terms["k" .. id] = Term:new(vim.tbl_deep_extend("keep", {

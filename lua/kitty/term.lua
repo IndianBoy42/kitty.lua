@@ -94,6 +94,10 @@ local function open_if_not_yet(fn)
   end
 end
 
+function Kitty:reopen(...)
+  self.is_opened = false
+  return self:open(...)
+end
 Kitty.open = open_if_not_yet(function(self, args, system_opts, on_exit)
   -- TODO: make this smarter?
   -- self:ls( function(code, _)
@@ -412,6 +416,31 @@ function Kitty:cmd(text, system_opts, on_exit)
   end
   return self:send(text, system_opts, on_exit)
 end
+-- Mirror the vim.system API
+function Kitty:vimsystem(opts, cmd, opts, on_exit)
+  opts = vim.tbl_extend("force", {
+    launch = false,
+  }, opts or {})
+  if opts.launch then
+    vim.notify "Launch Unimplemented"
+  else
+    if type(cmd) == "string" then cmd = { cmd } end
+    if opts.cwd then
+      table.insert(cmd, 0, "cd")
+      table.insert(cmd, 0, opts.cwd)
+      table.insert(cmd, 0, "&&")
+    end
+    if opts.stdin then
+    end
+    if opts.stdout then
+    end
+    if opts.stderr then
+    end
+
+    -- TODO: escaping???
+    self:cmd(vim.iter(cmd):join " ", {}, on_exit)
+  end
+end
 function Kitty:send_operator(args, system_opts, on_exit)
   args = args or {}
   Kitty.__send_operatorfunc = function(type)
@@ -531,10 +560,24 @@ function Kitty:scroll_down(lines, system_opts, on_exit) return self:scroll({ dow
 Kitty.signal_child = from_api_command "signal-child"
 
 local json_to_buffer
-function Kitty:ls(cb, on_exit)
+function Kitty:ls_match(match, cb, on_exit)
   json_to_buffer = json_to_buffer or require("kitty.ls").json_to_buffer
   cb = cb or json_to_buffer or vim.print
-  return self:api_command("ls", { "--all-env-vars" }, {}, function(out)
+  local args = { "--all-env-vars" }
+  if match == true or match == nil then
+    kutils.append_match_args(args, self.match_arg, "ls")
+  elseif match == "tab" then
+    kutils.append_match_args(args, self.match_arg, "ls", "--match-tab")
+  elseif type(match) == "string" then
+    if vim.startswith(match, "tab:") then
+      args[#args + 1] = "--match-tab"
+      args[#args + 1] = match:sub(5)
+    else
+      args[#args + 1] = "--match"
+      args[#args + 1] = match
+    end
+  end
+  return self:api_command("ls", args, {}, function(out)
     if out.code == 0 then
       local data = out.stdout
       local decoded = vim.json.decode(data, {})
@@ -542,6 +585,9 @@ function Kitty:ls(cb, on_exit)
       if on_exit then on_exit(out) end
     end
   end)
+end
+function Kitty:ls(cb, on_exit)
+  return self:ls_match(false, cb, on_exit)
 end
 Kitty.font_size = from_api_command "set-font-size"
 Kitty.font_up = from_api_command("set-font-size", { "--", "+1" })
