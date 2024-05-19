@@ -211,4 +211,19 @@ function M.dump_to_buffer(bufnr, data, cb)
   return bufnr, data
 end
 
+function M.in_sequence(f, list, on_exit)
+  local dep_stdout
+  local i = 1
+  local function run_next(out)
+    if out.code ~= 0 then return end
+    if list[i] then
+      dep_stdout[i] = out.stdout
+      f(list[i], run_next)
+    else
+      on_exit(dep_stdout)
+    end
+  end
+  run_next { code = 0 }
+end
+
 return M

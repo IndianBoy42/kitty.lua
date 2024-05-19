@@ -1,5 +1,8 @@
 local Make = {}
 local system = vim.system
+local kutils = require "kitty.utils"
+
+-- TODO: go to definition of target
 
 local function nop(...) return ... end
 
@@ -11,8 +14,11 @@ end
 function Make.from_command(cmd, parse)
   return system(cmd, {}, function(out)
     if out.code == 0 then parse(out.stdout) end
+    -- TODO: retries
   end)
 end
+
+--
 
 -- Append commands to self.targets
 -- name = { cmd = '', desc = ''}
@@ -111,23 +117,24 @@ function Make.setup(T)
   function T:add_target_provider(provider, force)
     local providers = vim.tbl_keys(Make.builtin_target_providers)
     -- TODO: filter by really available providers?
-    if force then print "unimplemented" end
+    if force then vim.notify("force unimplemented", vim.log.levels.WARN) end
     self:call_or_select(provider, "_add_target_provider", { providers, { prompt = "Add from Builtin Providers" } })
   end
   function T:last_cmd() return self.cmd_history[#self.cmd_history] end
-  function T:_run(cmd, run_opts)
+  function T:_run(cmd, run_opts, on_exit)
     run_opts = vim.tbl_extend("force", run_opts or {}, self.default_run_opts)
 
     if type(cmd) == "function" then cmd = cmd(self) end
 
     cmd = cmd
     if run_opts.launch_new then
+      -- FIXME: no way to on_exit the underlying process?
       return self:launch({
         focus_on_run = run_opts.focus_on_run,
         keep_open = run_opts.keep_open,
       }, run_opts.launch_new, { self.shell, "-c", cmd })
     else
-      self:cmd(cmd, run_opts.system_opts)
+      self:cmd(cmd, run_opts.system_opts, on_exit)
       -- TODO: get the output to quickfix list
       if run_opts.focus_on_run then self:focus() end
     end
@@ -171,7 +178,49 @@ function Make.setup(T)
       },
     }, nil, and_run)
   end
-  function T:_make(target, run_opts, remember_cmd)
+  local function resolve_aux_cmd(cmd)
+    if type(cmd) == "string" then
+      cmd = { make = cmd }
+    elseif type(cmd) == "function" then
+      cmd = { lua = cmd }
+    elseif type(cmd) == "table" and vim.islist(cmd) then
+      if type(cmd[1]) == "string" then
+        cmd = { make = cmd }
+      elseif type(cmd[1]) == "function" then
+        cmd = { lua = cmd }
+      end
+    end
+    return cmd
+  end
+  function T:execute_aux_cmd(cmd, run_opts, stdout, on_exit)
+    -- TODO: cmd.parallel == true
+    -- TODO: support a combination of cmd, make, and lua
+    on_exit = on_exit or nop
+    if cmd.cmd then
+      if type(cmd.cmd) == "string" then
+        self:_run(cmd.cmd, run_opts)
+      else
+        kutils.in_sequence(function(c, next) self:_run(c, run_opts, next) end, cmd.cmd, on_exit)
+      end
+    elseif cmd.make then
+      if type(cmd.make) == "string" then
+        self:_make(cmd.make, run_opts, function(out) on_exit { out.stdout } end)
+      elseif type(cmd.make) == "table" then
+        kutils.in_sequence(function(m, next) self:_make(m, run_opts, nil, next) end, cmd.make, on_exit)
+      end
+    elseif cmd.lua then
+      local dep_stdout = {}
+      if type(cmd.lua) == "function" then
+        dep_stdout[1] = cmd.lua(stdout, self)
+      elseif type(cmd.lua) == "table" then
+        for i, fn in ipairs(cmd.lua) do
+          dep_stdout[i] = fn(stdout, self)
+        end
+      end
+      on_exit(dep_stdout)
+    end
+  end
+  function T:_make(target, run_opts, remember_cmd, on_exit)
     if type(target) == "string" then
       target = self.targets[target]
       if not target then vim.notify("No such target: " .. target, vim.log.levels.ERROR) end
@@ -185,14 +234,36 @@ function Make.setup(T)
     local cmd = target.cmd
     if not cmd then vim.notify("No command associated: " .. (target_name or ""), vim.log.levels.ERROR) end
     self.targets.last.cmd = cmd
+
+    local function run_cmd(dep_stdout)
+      -- TODO: feed dep_stdout
+      self:run_cmd(
+        cmd,
+        vim.tbl_extend(
+          "force",
+          { prompt = "Chosen Task has no Cmd" },
+          run_opts or {},
+          target.run_opts or {},
+          function(out)
+            on_exit(out, target)
+            if out.code == 0 then self:post_run(target, run_opts, out.stdout, on_post_exit) end
+          end
+        ),
+        remember_cmd
+      )
+    end
+
     -- TODO: run dependencies
-    self:run_cmd(
-      cmd,
-      vim.tbl_extend("force", {
-        prompt = "Chosen Task has no Cmd",
-      }, run_opts or {}, target.run_opts or {}),
-      remember_cmd
-    )
+    if target.depends then
+      local depends = resolve_aux_cmd(target.depends)
+      self:execute_aux_cmd(depends, run_opts, nil, run_cmd)
+    else
+      run_cmd()
+    end
+  end
+  function T:post_run(target, run_opts, stdout, on_exit)
+    local post = resolve_aux_cmd(target.after)
+    if post then self:execute_aux_cmd(post, run_opts, stdout, on_exit) end
   end
   function T:make(target, run_opts, filter, remember_cmd)
     self:call_or_select(target, "_make", {
