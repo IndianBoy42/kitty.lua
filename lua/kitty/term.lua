@@ -603,6 +603,8 @@ Kitty.kitten = from_api_command "kitten"
 
 Kitty.reload_config = from_api_command "load-config"
 
+Kitty.select_window = from_api_command("select-window", { "--reactivate-prev-tab" })
+
 -- TODO: nice API for this
 Kitty.create_marker = from_api_command "create-marker"
 Kitty.remove_marker = from_api_command "remove-marker"
