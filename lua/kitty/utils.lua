@@ -67,6 +67,11 @@ function M.match_expr_from_tbl(tbl, conv_keys)
   return m
 end
 function M.append_match_args(args, match_arg, use_window_id, flag)
+  if type(use_window_id) == "string" then
+    use_window_id = use_window_id:sub(-4) == "-tab"
+      or use_window_id:sub(-7) == "-layout"
+      or use_window_id:sub(-8) == "-layouts"
+  end
   if match_arg and match_arg ~= "" then
     vim.list_extend(args, {
       flag and flag or "--match",
@@ -85,14 +90,9 @@ function M.append_match_args(args, match_arg, use_window_id, flag)
 end
 function M.build_api_command(listen_on, match_arg, kitty_exe, cmd, args)
   local built_args = { kitty_exe, "@", "--to", listen_on, cmd }
-  if not vim.tbl_contains(M.api_commands_no_match, cmd) then
-    M.append_match_args(
-      built_args,
-      match_arg,
-      cmd:sub(-4) == "-tab" or cmd:sub(-7) == "-layout" or cmd:sub(-8) == "-layouts"
-    )
-  end
+  if not vim.tbl_contains(M.api_commands_no_match, cmd) then M.append_match_args(built_args, match_arg, cmd) end
   built_args = vim.list_extend(built_args, args or {})
+  -- vim.print(debug.traceback(vim.iter(built_args):join " "))
   return built_args
 end
 local system = vim.system
@@ -201,6 +201,7 @@ function M.dump_to_buffer(bufnr, data, cb)
     bufnr = vim.api.nvim_get_current_buf()
   elseif bufnr == "tab" then
     vim.cmd.tabnew()
+    bufnr = vim.api.nvim_get_current_buf()
   end
   if cb then
     cb() -- nvim_buf_call

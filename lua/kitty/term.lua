@@ -82,16 +82,15 @@ Kitty.close_blocking = from_api_command_blocking "close-window"
 local function open_if_not_yet(fn)
   return function(self, args, system_opts, on_exit)
     if self.is_opened then
-      self:focus()
+      self:focus() -- FIXME: sure about this?
       return
     end
 
-    local handle, pid = fn(self, args, system_opts, on_exit)
-    -- TODO: get the window/tab id
+    local handle = { fn(self, args, system_opts, on_exit) }
 
     self.is_opened = true
 
-    return handle, pid
+    return unpack(handle)
   end
 end
 
@@ -214,7 +213,7 @@ function Kitty:sub_window(o, where)
 
   -- TODO: should this really be a subclass? not all properties should be inherited... should any at all?
   local Sub = self:new(o)
-  Sub:set_match_arg { -- TODO: using title is kinda brittle
+  Sub:set_match_arg { -- TODO: using title is kinda brittle, maybe
     title = Sub.title,
   }
 
@@ -224,7 +223,7 @@ function Kitty:sub_window(o, where)
     Sub.split_location = where
     where = "window"
   end
-  Sub.launch_args = {
+  local launch_args = {
     "--window-title",
     Sub.title,
     "--tab-title",
@@ -234,34 +233,36 @@ function Kitty:sub_window(o, where)
     "--cwd",
     open_cwd,
   }
-  if not Sub.dont_copy_env then Sub.launch_args[#Sub.launch_args + 1] = "--copy-env" end
+  if not Sub.dont_copy_env then launch_args[#launch_args + 1] = "--copy-env" end
   local env = kutils.nvim_env_injections(Sub)
-  kutils.env_injections(env, Sub.launch_args)
-  kutils.env_injections(Sub.env_injections, Sub.launch_args)
-  if not Sub.focus_on_open then Sub.launch_args[#Sub.launch_args + 1] = "--dont-take-focus" end
-  if Sub.keep_open then Sub.launch_args[#Sub.launch_args + 1] = "--hold" end
+  kutils.env_injections(env, launch_args)
+  kutils.env_injections(Sub.env_injections, launch_args)
+  if not Sub.focus_on_open then launch_args[#launch_args + 1] = "--dont-take-focus" end
+  if Sub.keep_open then launch_args[#launch_args + 1] = "--hold" end
   if Sub.split_location then
-    Sub.launch_args[#Sub.launch_args + 1] = "--location"
-    Sub.launch_args[#Sub.launch_args + 1] = Sub.split_location
+    launch_args[#launch_args + 1] = "--location"
+    launch_args[#launch_args + 1] = Sub.split_location
   end
   if Sub.stdin_source then
-    Sub.launch_args[#Sub.launch_args + 1] = "--stdin-source"
-    Sub.launch_args[#Sub.launch_args + 1] = Sub.stdin_source
+    launch_args[#launch_args + 1] = "--stdin-source"
+    launch_args[#launch_args + 1] = Sub.stdin_source
   end
 
   Sub.open = open_if_not_yet(function(sub, args, system_opts, on_exit)
     system_opts = system_opts or {}
     if not args and sub.launch_cmd then args = sub.launch_cmd end
     if type(args) == "string" then args = { args } end
-    if args then sub.launch_args = vim.list_extend(sub.launch_args, args) end
+    local cmd = vim.list_extend({}, launch_args)
+    if args then cmd = vim.list_extend(cmd, args) end
 
-    local handle = self:api_command("launch", sub.launch_args, system_opts, function(out)
+    local handle = self:api_command("launch", cmd, system_opts, function(out)
       if out.code == 0 and out.stdout then
         sub:set_match_arg_from_id(out.stdout)
       else
         vim.notify("Error launching Kitty subwindow", vim.log.levels.ERROR, {})
         vim.print(out.stderr)
       end
+      if on_exit then on_exit(out) end
     end)
     return handle
   end)
@@ -269,10 +270,11 @@ function Kitty:sub_window(o, where)
   Sub.launch_where = where
   return Sub
 end
+
 function Kitty:launch(o, where, args, system_opts, on_exit)
   local Sub = self:sub_window(o, where)
-  Sub:open(args, system_opts, on_exit)
-  return Sub
+  local open_cmd = Sub:open(args, system_opts, on_exit)
+  return Sub, open_cmd
 end
 
 --https://sw.kovidgoyal.net/kitty/remote-control/#cmdoption-kitty-launch-type
@@ -551,6 +553,7 @@ Kitty.set_window_title = from_api_command("set-window-title", { "--temporary" })
 Kitty.action = from_api_command "action"
 -- Run a kitten
 Kitty.kitten = from_api_command "kitten"
+-- TODO: helpers for specific actions and kittens
 
 Kitty.reload_config = from_api_command "load-config"
 
