@@ -65,9 +65,9 @@ function Make.setup(T)
           return false
         end
 
-        if a[2].priority or b[2].priority then return (a[2].priority or 0) >= (b[2].priority or 0) end
+        local ap, bp = a[2].priority or 1, b[2].priority or 1
 
-        return a[1] < b[1]
+        return ap > bp
       end)
       self.target_list_cache = list
     end
@@ -113,6 +113,7 @@ function Make.setup(T)
   function T:_add_target_provider(provider)
     local f = type(provider) == "function" and provider or Make.builtin_target_providers[provider]
     f(self.targets, self)
+    self.target_list_cache = nil
   end
   function T:add_target_provider(provider, force)
     local providers = vim.tbl_keys(Make.builtin_target_providers)
@@ -144,7 +145,7 @@ function Make.setup(T)
     self.cmd_history[#self.cmd_history + 1] = i
     self.targets.last_manual.cmd = i
   end
-  function T:run_cmd(cmd, run_opts, remember_cmd)
+  function T:run_cmd(cmd, run_opts, remember_cmd, on_exit)
     self:call_or_input(cmd, "_run", {
       prompt = "Run in " .. self.title,
       default = self:last_cmd(),
@@ -155,7 +156,7 @@ function Make.setup(T)
         self:remember_cmd(i)
       end
       return i
-    end, run_opts)
+    end, run_opts, on_exit)
   end
   function T:run(cmd, run_opts, remember_cmd) self:run_cmd(cmd, run_opts, remember_cmd) end
   function T:rerun(run_opts) self:run_cmd(self:last_cmd(), nil, run_opts) end
@@ -239,21 +240,18 @@ function Make.setup(T)
       -- TODO: feed dep_stdout
       self:run_cmd(
         cmd,
-        vim.tbl_extend(
-          "force",
-          { prompt = "Chosen Task has no Cmd" },
-          run_opts or {},
-          target.run_opts or {},
-          function(out)
-            on_exit(out, target)
-            if out.code == 0 then self:post_run(target, run_opts, out.stdout, on_post_exit) end
-          end
-        ),
-        remember_cmd
+        vim.tbl_extend("force", { prompt = "Chosen Task has no Cmd" }, run_opts or {}, target.run_opts or {}),
+        remember_cmd,
+        function(out)
+          if on_exit then on_exit(out, target) end
+          if out.code == 0 then self:post_run(target, run_opts, out.stdout, on_post_exit) end
+        end
       )
     end
 
     -- TODO: run dependencies
+    if target.writeall then vim.cmd.wall() end
+    if target.write then vim.cmd.write() end
     if target.depends then
       local depends = resolve_aux_cmd(target.depends)
       self:execute_aux_cmd(depends, run_opts, nil, run_cmd)
@@ -360,7 +358,7 @@ function Make.setup(T)
     })
   end
 
-  -- TODO: dynamic target providers (eg. RustRunnables)
+  -- TODO: reload target providers
   if T.target_providers ~= nil then
     if type(T.target_providers) ~= "table" then T.target_providers = { T.target_providers } end
     for _, v in ipairs(T.target_providers) do

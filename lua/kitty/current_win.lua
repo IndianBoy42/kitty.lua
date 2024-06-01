@@ -36,32 +36,9 @@ K.setup = function(cfg)
     pattern = "SIGUSR1",
     callback = function() K.focus() end,
   })
+  function K.wakeup(launch) return KT:sh("wakeup", launch) .. " " .. vim.fn.getpid() end
 
   return K
-end
-
-local uv = vim.uv
-K.notify = function()
-  local pipe
-  if K.pipe then
-    pipe = K.pipe
-  else
-    K.pipe = uv.new_pipe(true)
-    K.pipe:bind(K.notify_pipe_name or "/tmp/kitty-nvim-current-win")
-    K.pipe:listen(128, function(err)
-      if err then error(err) end
-      K.pipe:read_start(vim.schedule_wrap(function(err, data)
-        if err then
-          -- handle read error
-          error(err)
-        elseif data then
-          -- handle data
-        else
-          -- handle disconnect
-        end
-      end))
-    end)
-  end
 end
 
 return K

@@ -117,10 +117,11 @@ local function terminal(where, opts, args, name, reuse)
   end
   return t
 end
-M.terminal = terminal
-M.tab = function(opts, args, name) return terminal("tab", opts, args, name) end
-M.window = function(opts, args, name) return terminal("window", opts, args, name) end
-M.os_window = function(opts, args, name) return terminal("os-window", opts, args, name) end
+M.use_terminal = terminal
+M.use_tab = function(opts, args, name) return terminal("tab", opts, args, name) end
+M.use_window = function(opts, args, name) return terminal("window", opts, args, name) end
+M.use_os_window = function(opts, args, name) return terminal("os-window", opts, args, name) end
+-- TODO: reuse based on foreground_process or other 
 
 local attach_opts = {}
 function M.kitty_attach(opts)

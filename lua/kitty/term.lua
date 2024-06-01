@@ -3,51 +3,98 @@ local api = vim.api
 local system = vim.system
 local titles = {}
 local kutils = require "kitty.utils"
+
+---@class KittyTerminal
 local Kitty = {
   title = "Kitty.nvim",
-  listen_on = kutils.port_from_pid,
+  listen_on = kutils.port_from_pid, ---@type string|function
   default_launch_location = "tab",
   is_tab = false,
   launch_counter = 0,
   from_id = 1,
-  kitty_client_exe = kutils.kitten(),
-  send_text_hooks = {},
+  kitty_client_exe = kutils.kitten_exe(),
+  send_text_prefix = "",
+  send_text_suffix = "",
+  text_sep = "",
+  bracketed_paste = false,
 }
 
+---@alias OnExit fun(out: vim.SystemCompleted)
+
+---Build the command line for a Kitty remote control API command
+---@param cmd string Command name
+---@param args string[] arguments
+---@return string[] Commandline than can be used with eg. vim.system
 function Kitty:build_api_command(cmd, args)
   return kutils.build_api_command(self.listen_on, self.match_arg, self.kitty_client_exe, cmd, args)
 end
+---Run a Kitty remote control API command
+---@param cmd string
+---@param args string[]
+---@param system_opts vim.SystemOpts?
+---@param on_exit fun(out: vim.SystemCompleted)?
+---@return vim.SystemObj
 function Kitty:api_command(cmd, args, system_opts, on_exit)
   return kutils.api_command(self.listen_on, self.match_arg, self.kitty_client_exe, cmd, args, system_opts, on_exit)
 end
-function Kitty:api_command_blocking(cmd, args, system_opts, on_exit)
-  return kutils.api_command_blocking(self.listen_on, self.match_arg, self.kitty_client_exe, cmd, args, system_opts)
+---Append arguments required to match `self` kitty window
+---@param args string[] output parameter
+---@param use_window_id boolean|string should specifically match only the window,
+---                                    pass a string to figure it out automatically from the command
+---@param flag string? "--match" or something else
+---@return string[] args
+function Kitty:append_match_args(args, use_window_id, flag)
+  return kutils.append_match_args(args, self.match_arg, use_window_id, flag)
 end
+
+---Create a simple wrapper for an API command
+---@param name string
+---@param default_args string[]?
+---@return fun(self, args: string[]?, system_opts: vim.SystemOpts?, on_exit: fun(out: vim.SystemCompleted)?): vim.SystemObj
 local from_api_command = function(name, default_args)
   default_args = default_args or {}
   vim.validate {
     name = { name, "string" },
   }
+  ---Calls the API command
+  ---@param args string[] appended to default_args
+  ---@param system_opts vim.SystemOpts?
+  ---@param on_exit fun(out: vim.SystemCompleted)?
+  ---@return vim.SystemObj
   return function(self, args, system_opts, on_exit)
     if type(args) ~= "table" then args = { args } end
-    args = vim.list_extend(args or {}, default_args)
+    args = vim.list_extend(default_args, args or {})
     return self:api_command(name, args, system_opts, on_exit)
   end
 end
-local from_api_command_blocking = function(name, default_args)
-  default_args = default_args or {}
-  vim.validate {
-    name = { name, "string" },
-  }
-  return function(self, args, system_opts)
-    if type(args) ~= "table" then args = { args } end
-    args = vim.list_extend(args or {}, default_args)
-    return self:api_command_blocking(name, args, system_opts)
-  end
-end
 
-function Kitty:append_match_args(args, use_window_id, flag)
-  return kutils.append_match_args(args, self.match_arg, use_window_id, flag)
+function Kitty:new(o)
+  if o == nil then return Kitty:new(self) end
+  o = o or {}
+  setmetatable(o, self)
+  self.__index = self
+
+  -- Setup stuff
+  if type(o.listen_on) == "function" then o.listen_on = o.listen_on() end
+  if o.attach_to_win then
+    o.listen_on = kutils.current_term_listen_on()
+    o.from_id = o.attach_to_win
+    if o.attach_to_win == true or o.attach_to_win == "current" then o.from_id = kutils.current_win_id() end
+    o.is_opened = true
+    o.open = function(...) end
+    o.attach_to_win = nil
+  end
+  if o.from_id then
+    o:set_match_arg_from_id(o.from_id)
+    o.from_id = nil
+  end
+  -- Warn about Duplicate window titles
+  -- for _, v in ipairs(titles) do
+  --   if o.title == v then vim.notify("Kitty Window title already used: " .. o.title, vim.log.WARN, {}) end
+  -- end
+  titles[#titles + 1] = o.title
+
+  return o
 end
 
 function Kitty:close_on_leave(evt, wait)
@@ -76,7 +123,7 @@ end
 
 Kitty.close = from_api_command "close-window"
 Kitty.close_tab = from_api_command "close-tab"
-Kitty.close_blocking = from_api_command_blocking "close-window"
+function Kitty:close_blocking(...) return self:close(...):wait() end
 
 -- TODO: make this smarter?
 local function open_if_not_yet(fn)
@@ -186,18 +233,24 @@ Kitty.open = open_if_not_yet(function(self, args, system_opts, on_exit)
   return handle
 end)
 
-Kitty.to_arg = setmetatable({}, {
-  __call = function(t, k, v)
-    local ret = "--" .. k:gsub("_", "-") .. "=" .. v
-    return ret
-  end,
-  __index = function(t, k)
-    local ret = "--" .. k:gsub("_", "-")
-    return ret
-  end,
-})
+local where_locations = {
+  after = true,
+  before = true,
+  first = true,
+  hsplit = true,
+  last = true,
+  neighbor = true,
+  split = true,
+  vsplit = true,
+}
 
-local where_locations = { "after", "before", "first", "hsplit", "last", "neighbor", "split", "vsplit" }
+---@class KittySubOpts
+---@field listen_on string|function
+
+---Create a new subwindow object
+---@param o KittySubOpts options for
+---@param where any
+---@return unknown
 function Kitty:sub_window(o, where)
   if where == true then where = self.default_launch_location end
   where = where or self.default_launch_location
@@ -223,7 +276,7 @@ function Kitty:sub_window(o, where)
 
   local open_cwd = Sub.open_cwd
   if open_cwd == nil or open_cwd == "" then open_cwd = "current" end
-  if vim.tbl_contains(where_locations, where, {}) then
+  if where_locations[where] then
     Sub.split_location = where
     where = "window"
   end
@@ -307,7 +360,9 @@ function Kitty:new_overlay(o, args)
 end
 
 function Kitty:goto_layout(name, system_opts, on_exit)
-  if name == "last-used-layout" then return self:api_command("last-used-layout", {}, system_opts, on_exit) end
+  if name == "last-used-layout" or name == "last-used" or name == "last" then
+    return self:api_command("last-used-layout", {}, system_opts, on_exit)
+  end
 
   return self:api_command("goto-layout", { name }, system_opts, on_exit)
 end
@@ -323,14 +378,14 @@ Kitty.resize_window = from_api_command "resize-window"
 Kitty.reset_layout = from_api_command("resize-window", { "--axis", "reset" })
 Kitty.toggle_fullscreen = from_api_command("resize-os-window", { "--action", "toggle-fullscreen" })
 Kitty.toggle_maximized = from_api_command("resize-os-window", { "--action", "toggle-maximized" })
-function Kitty:toggle_fullscreen(system_opts, on_exit) self:resize_os_window({}, system_opts, on_exit) end
--- target can be:
---  - new-tab
---  - new-window (os window)
---  - this-tab (this = current_win)
---  - string to pass to --target-tab (see kitty docs)
---  - Kitty terminal object whose tab will be used
---  - TODO: {new_in = Kitty terminal object}
+
+--- @param target string can be:
+---  - new-tab
+---  - new-window (os window)
+---  - this-tab (this = current_win)
+---  - string to pass to --target-tab (see kitty docs)
+---  - Kitty terminal object whose tab will be used
+---  - TODO: {new_in = Kitty terminal object}
 function Kitty:detach(target, system_opts, on_exit)
   local built_args = {}
   if self.is_tab then
@@ -366,6 +421,7 @@ function Kitty:send_key(keys, system_opts, on_exit)
   -- TODO: map from neovim to kitty
   return self:api_command("send-key", type(keys) == "table" and keys or { keys }, system_opts, on_exit)
 end
+Kitty.send_raw = from_api_command "send-text"
 function Kitty:send(text, system_opts, on_exit)
   local sep = self.text_sep or "\\r"
   local send_text = text
@@ -400,12 +456,6 @@ function Kitty:send(text, system_opts, on_exit)
   if suffix ~= nil then send_text = send_text .. suffix end
   local send = { "--", send_text }
 
-  for _, hook in pairs(self.send_text_hooks) do
-    local new, done = hook(send)
-    if new ~= nil then send = new end
-    if done then break end
-  end
-
   return self:api_command("send-text", send, system_opts, on_exit)
 end
 function Kitty:cmd(text, system_opts, on_exit)
@@ -416,8 +466,17 @@ function Kitty:cmd(text, system_opts, on_exit)
   end
   return self:send(text, system_opts, on_exit)
 end
+function Kitty:paste(text, system_opts, on_exit)
+  if type(text) == "string" then
+    text = { text = text, suffix = "\r", bracketed_paste = true }
+  elseif type(text) == "table" then
+    text.suffix = "\r"
+    text.bracketed_paste = true
+  end
+  return self:send(text, system_opts, on_exit)
+end
 -- Mirror the vim.system API
-function Kitty:vimsystem(opts, cmd, opts, on_exit)
+function Kitty:vimsystem(cmd, opts, on_exit)
   opts = vim.tbl_extend("force", {
     launch = false,
   }, opts or {})
@@ -456,14 +515,6 @@ function Kitty:send_operator(args, system_opts, on_exit)
   return "g@" .. (args.range or "")
 end
 
-function Kitty:paste(text, system_opts, on_exit)
-  if type(text) == "string" then
-    text = { text = text, bracketed_paste = true }
-  elseif type(text) == "table" then
-    text.bracketed_paste = true
-  end
-  return self:send(text, system_opts, on_exit)
-end
 function Kitty:send_file(from_file, system_opts, on_exit)
   return self:api_command("send-text", {
     "--from-file",
@@ -516,16 +567,34 @@ function Kitty:get_text_to_qflist(extent, args, system_opts, on_exit)
     end)
   )
 end
+Kitty.yanky_integration = function(reg, data)
+  local ok, yanky = pcall(require, "yanky")
+  if ok then
+    Kitty.yanky_integration = function(_reg, _data)
+      if _reg == '"' or _reg == "+" or _reg == "*" then yanky.history.push(_data) end
+    end
+    Kitty.yanky_integration(reg, data)
+  else
+    Kitty.yanky_integration = function() end
+  end
+end
+function Kitty:clipboard_integration(...) self.yanky_integration(...) end
 function Kitty:get_selection(reg)
   local cb
   if reg == nil or type(reg) == "string" or reg == true then
     if type(reg) ~= "string" or reg == "register" then reg = vim.v.register end
-    cb = function(data) vim.fn.setreg(reg or '"', data:sub(1, -2)) end
+    reg = reg or '"'
+    cb = function(data)
+      -- TODO: yanky integration
+      data = data:sub(1, -2)
+      self:clipboard_integration(reg, data)
+      vim.fn.setreg(reg, data)
+    end
   elseif type(reg) == "function" then
     cb = reg
   end
   cb = vim.schedule_wrap(cb)
-  self:get_text("selection", {}, {}, function(out)
+  return self:get_text("selection", {}, {}, function(out)
     if out.code == 0 then cb(out.stdout) end
   end)
 end
@@ -565,11 +634,11 @@ function Kitty:ls_match(match, cb, on_exit)
   cb = cb or json_to_buffer or vim.print
   local args = { "--all-env-vars" }
   if match == true or match == nil then
-    kutils.append_match_args(args, self.match_arg, "ls")
+    self:append_match_args(args, "ls")
   elseif match == "tab" then
-    kutils.append_match_args(args, self.match_arg, "ls", "--match-tab")
+    self:append_match_args(args, "ls", "--match-tab")
   elseif type(match) == "string" then
-    if vim.startswith(match, "tab:") then
+    if match:sub(1, 4) == "tab:" then
       args[#args + 1] = "--match-tab"
       args[#args + 1] = match:sub(5)
     else
@@ -580,15 +649,15 @@ function Kitty:ls_match(match, cb, on_exit)
   return self:api_command("ls", args, {}, function(out)
     if out.code == 0 then
       local data = out.stdout
-      local decoded = vim.json.decode(data, {})
-      cb(decoded, data)
+      if data then
+        local decoded = vim.json.decode(data, {})
+        cb(decoded, data)
+      end
       if on_exit then on_exit(out) end
     end
   end)
 end
-function Kitty:ls(cb, on_exit)
-  return self:ls_match(false, cb, on_exit)
-end
+function Kitty:ls(cb, on_exit) return self:ls_match(false, cb, on_exit) end
 Kitty.font_size = from_api_command "set-font-size"
 Kitty.font_up = from_api_command("set-font-size", { "--", "+1" })
 Kitty.font_down = from_api_command("set-font-size", { "--", "-1" })
@@ -635,14 +704,13 @@ local sh = setmetatable({}, {
   end,
 })
 function Kitty:sh(name, launch)
-  local shcmd = "sh " .. sh[name] .. " " .. vim.fn.getpid()
+  local shcmd = vim.opt.shell .. " " .. sh[name]
   if launch then
     return "launch --type=background " .. shcmd
   else
     return shcmd
   end
 end
-function Kitty:wakeup(launch) return self:sh("wakeup", launch) end
 function Kitty:hints(opts, system_opts, on_exit)
   opts = opts or {}
   -- TODO: does - paste to this terminal or that?
@@ -651,7 +719,7 @@ function Kitty:hints(opts, system_opts, on_exit)
   }
   if not opts.stay_in_terminal then
     args[#args + 1] = "--program"
-    args[#args + 1] = self:wakeup(true)
+    args[#args + 1] = require("kitty.current_win").wakeup(true)
   end
   -- hash, hyperlink, ip, line, linenum, path, regex, url, word
   if opts.type then
@@ -700,7 +768,13 @@ function Kitty:hints(opts, system_opts, on_exit)
       if output == true then output = "register" end
       local on_focus_gained
       if output == "register" then output = vim.v.register end
-      if not vim.tbl_contains({ "@", "+", "*" }, output) and #output == 1 then
+      if output == "+" or output == "clipboard" or output == "@" then
+        output = "@"
+        reg = "+"
+      elseif output == "*" or output == "selection" then
+        output = "*"
+        reg = "*"
+      elseif #output == 1 then
         output = "@"
         local old = vim.fn.getreg "+"
         on_focus_gained = function()
@@ -708,12 +782,6 @@ function Kitty:hints(opts, system_opts, on_exit)
           vim.fn.setreg("+", old)
         end
         reg = '"'
-      elseif output == "+" or output == "clipboard" or output == "@" then
-        output = "@"
-        reg = "+"
-      elseif output == "selection" then
-        output = "*"
-        reg = "*"
       else
         error("Invalid output register for yank/paste: " .. output)
       end
@@ -757,8 +825,8 @@ function Kitty:hints(opts, system_opts, on_exit)
     end
     if prg.extra_programs then
       program(prg.extra_programs, false)
-      for _, program in ipairs(prg.extra_programs) do
-        program(program, false)
+      for _, p in ipairs(prg.extra_programs) do
+        program(p, false)
       end
     end
   end
@@ -788,7 +856,7 @@ function Kitty:hints(opts, system_opts, on_exit)
     args[#args + 1] = opts.custom_proc
   end
 
-  self:api_command("kitten", args, system_opts, function(out)
+  return self:api_command("kitten", args, system_opts, function(out)
     if out.code == 0 then self:focus({}, on_exit) end
   end)
 end
@@ -805,43 +873,13 @@ function Kitty:current_tab() return self:new { is_tab = self.is_tab } end
 -- TODO: Remote control: Allow matching by neighbor of active window. Useful for navigation plugins like vim-kitty-navigator
 -- TODO: matching on set-user-var
 
-function Kitty:new(o)
-  if o == nil then return Kitty:new(self) end
-  o = o or {}
-  o.send_text_hooks = o.send_text_hooks and vim.list_extend(o.send_text_hooks, self.send_text_hooks)
-  setmetatable(o, self)
-  self.__index = self
-
-  -- Setup stuff
-  if type(o.listen_on) == "function" then o.listen_on = o.listen_on() end
-  if o.attach_to_win then
-    o.listen_on = kutils.current_win_listen_on()
-    o.from_id = o.attach_to_win
-    if o.attach_to_win == true or o.attach_to_win == "current" then o.from_id = kutils.current_win_id() end
-    o.is_opened = true
-    o.open = function(...) end
-    o.attach_to_win = nil
-  end
-  if o.from_id then
-    o:set_match_arg_from_id(o.from_id)
-    o.from_id = nil
-  end
-  -- Warn about Duplicate window titles
-  -- for _, v in ipairs(titles) do
-  --   if o.title == v then vim.notify("Kitty Window title already used: " .. o.title, vim.log.WARN, {}) end
-  -- end
-  titles[#titles + 1] = o.title
-
-  return o
-end
-
 -- TODO: create a user command that allows interacting with the terminal
 function Kitty:user_command(name)
   api.nvim_create_user_command(name, function(args)
     if args.fargs[1]:sub(1, 1) == "+" then
       self[args.fargs[1]:sub(2)](self, vim.list_slice(args.fargs, 2, nil))
     else
-      self:send(args.args .. "\\r")
+      self:cmd(args.args)
     end
   end, { nargs = "?" })
 end

@@ -4,7 +4,10 @@ local meta_M = {}
 local kutils = require "kitty.utils"
 M = setmetatable(M, meta_M)
 M.json_to_buffer = vim.schedule_wrap(function(_, raw)
-  kutils.dump_to_buffer("tab", raw, function() vim.opt.filetype = "json" end)
+  kutils.dump_to_buffer("tab", raw, function()
+    vim.opt.filetype = "json"
+    vim.opt.buflisted = false
+  end)
 end)
 
 local function with_cache(tbl, key, fn)
@@ -92,7 +95,7 @@ end
 M.shell = function(win)
   local o = {}
   for _, p in ipairs(win.foreground_processes) do
-    if vim.endswith(p.cmdline[1], "sh") then
+    if p.cmdline and p.cmdline[1] and p.cmdline[1]:sub(-2) == "sh" then
       o.cmdline = p.cmdline
       o.sh = vim.fs.basename(p.cmdline[1])
     end

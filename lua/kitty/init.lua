@@ -27,7 +27,7 @@ function K.attach_to(cfg, ls)
     local function filter_by_fg(winid, win)
       table.insert(candidates, win)
       for _, p in ipairs(win.foreground_processes) do
-        if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") and vim.fs.normalize(p.cwd) == cwd then return true end
+        if p.cmdline[1] and p.cmdline[1]:sub(-2) == "sh" and vim.fs.normalize(p.cwd) == cwd then return true end
       end
       return false
     end
@@ -71,7 +71,7 @@ function K.attach_to(cfg, ls)
       -- Recheck filtered out candidates for shells
       for _, win in ipairs(candidates) do
         for _, p in ipairs(win.foreground_processes) do
-          if p.cmdline[1] and vim.endswith(p.cmdline[1], "sh") then
+          if p.cmdline[1] and p.cmdline[1]:sub(-2) == "sh" then
             cfg.attach_to_win = win.id
             cfg.cd_to_cwd = cwd
           end
@@ -80,7 +80,7 @@ function K.attach_to(cfg, ls)
     end
   end
 
-  if not pcall(inner) then vim.defer_fn(function() K.attach_to(cfg, ls) end, 200) end
+  if not pcall(inner) then vim.defer_fn(function() inner() end, 200) end
 end
 
 local function inject_env(sh, k, env, value)
@@ -135,9 +135,6 @@ K.setup = function(cfg, cb)
       cfg = vim.tbl_deep_extend("keep", cfg, L.term_config(win))
       K.instance = require("kitty.term"):new(cfg)
       if cfg.cd_to_cwd then K.instance:cmd("cd " .. cfg.cd_to_cwd) end
-      -- TODO: send the nvim injections, problem: this is shell dependent
-      -- local sh = L.shell(win)
-      -- inject_env(sh.sh, K.instance, cfg.env, K.instance)
     end
 
     if K.instance then K.setup = function(_) return K end end

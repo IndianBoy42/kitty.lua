@@ -46,7 +46,7 @@ local unkeycode_map = {
 M.unkeycode_map = unkeycode_map
 function M.unkeycode(c) return unkeycode_map[c:lower()] or c end
 
-function M.current_win_listen_on() return vim.env.KITTY_LISTEN_ON end
+function M.current_term_listen_on() return vim.env.KITTY_LISTEN_ON end
 function M.current_win_id() return vim.env.KITTY_WINDOW_ID end
 local unique_listen_on_counter = 0
 function M.port_from_pid(prefix)
@@ -55,8 +55,8 @@ function M.port_from_pid(prefix)
 end
 
 M.api_commands_no_match = {
-  "set-font-size",
-  "ls",
+  ["set-font-size"] = true,
+  ["ls"] = true,
 }
 function M.match_expr_from_tbl(tbl, conv_keys)
   local m = nil
@@ -66,6 +66,13 @@ function M.match_expr_from_tbl(tbl, conv_keys)
   end
   return m
 end
+---Append arguments required to match some kitty window
+---@param args string[] output parameter
+---@param match_arg {[string]:string} table of match queries (see Kitty docs)
+---@param use_window_id boolean|string should specifically match only the window,
+---                                    pass a string to figure it out automatically from the command
+---@param flag string? "--match" or something else
+---@return string[] args
 function M.append_match_args(args, match_arg, use_window_id, flag)
   if type(use_window_id) == "string" then
     use_window_id = use_window_id:sub(-4) == "-tab"
@@ -90,7 +97,7 @@ function M.append_match_args(args, match_arg, use_window_id, flag)
 end
 function M.build_api_command(listen_on, match_arg, kitty_exe, cmd, args)
   local built_args = { kitty_exe, "@", "--to", listen_on, cmd }
-  if not vim.tbl_contains(M.api_commands_no_match, cmd) then M.append_match_args(built_args, match_arg, cmd) end
+  if not M.api_commands_no_match[cmd] then M.append_match_args(built_args, match_arg, cmd) end
   built_args = vim.list_extend(built_args, args or {})
   -- vim.print(debug.traceback(vim.iter(built_args):join " "))
   return built_args
@@ -115,9 +122,6 @@ function M.api_command(listen_on, match_arg, kitty_exe, cmd, args, system_opts, 
     }),
     on_exit
   )
-end
-function M.api_command_blocking(listen_on, match_arg, kitty_exe, cmd, args, system_opts, on_exit)
-  return M.api_command(listen_on, match_arg, kitty_exe, cmd, args, system_opts):wait()
 end
 
 function M.nvim_env_injections(opts)
@@ -173,7 +177,7 @@ function M.get_selection(type)
   end
 end
 
-function M.kitten()
+function M.kitten_exe()
   if vim.fn.executable "kitten" == 1 then return "kitten" end
   return "kitty"
 end
@@ -226,5 +230,16 @@ function M.in_sequence(f, list, on_exit)
   end
   run_next { code = 0 }
 end
+
+M.to_arg = setmetatable({}, {
+  __call = function(t, k, v)
+    local ret = "--" .. k:gsub("_", "-") .. "=" .. v
+    return ret
+  end,
+  __index = function(t, k)
+    local ret = "--" .. k:gsub("_", "-")
+    return ret
+  end,
+})
 
 return M
