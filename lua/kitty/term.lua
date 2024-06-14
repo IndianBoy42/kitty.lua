@@ -503,7 +503,15 @@ function Kitty:send(text, system_opts, on_exit)
   end
   if prefix ~= nil then send_text = prefix .. send_text end
   if suffix ~= nil then send_text = send_text .. suffix end
-  local send = { "--", send_text }
+  local send = {}
+  if bracketed_paste then
+    if bracketed_paste == "force" then
+      send[#send + 1] = "--bracketed-paste=enable"
+    else
+      send[#send + 1] = "--bracketed-paste=auto"
+    end
+  end
+  vim.list_extend(send, { "--", send_text })
 
   return self:api_command("send-text", send, system_opts, on_exit)
 end
