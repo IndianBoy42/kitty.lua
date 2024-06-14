@@ -494,24 +494,33 @@ function Kitty:send(text, system_opts, on_exit)
 
   if type(send_text) == "table" and vim.islist(send_text) then send_text = table.concat(send_text, sep) end
 
-  if bracketed_paste ~= nil then
-    prefix = prefix or ""
-    suffix = suffix or ""
-    local csi = kutils.unkeycode_map.CSI
-    prefix = prefix .. csi .. "200~"
-    suffix = csi .. "201~" .. suffix
-  end
+  -- if bracketed_paste ~= nil then
+  --   prefix = prefix or ""
+  --   suffix = suffix or ""
+  --   local csi = kutils.unkeycode_map.CSI
+  --   prefix = prefix .. csi .. "200~"
+  --   suffix = csi .. "201~" .. suffix
+  -- end
   if prefix ~= nil then send_text = prefix .. send_text end
   if suffix ~= nil then send_text = send_text .. suffix end
-  local send = { "--", send_text }
+  local send = {}
+  if bracketed_paste then
+    if bracketed_paste == "force" then
+      send[#send + 1] = "--bracketed-paste=enable"
+    else
+      send[#send + 1] = "--bracketed-paste=auto"
+    end
+  end
+  vim.list_extend(send, { "--", send_text })
 
   return self:api_command("send-text", send, system_opts, on_exit)
 end
 function Kitty:cmd(text, system_opts, on_exit)
   if type(text) == "string" then
-    text = { text = text, suffix = "\r" }
+    text = { text = text, suffix = "\r", bracketed_paste = false }
   elseif type(text) == "table" then
     text.suffix = "\r"
+    text.bracketed_paste = false
   end
   return self:send(text, system_opts, on_exit)
 end
