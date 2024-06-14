@@ -102,5 +102,13 @@ M.shell = function(win)
   end
   return o
 end
+M.is_nvim_attached = function(win)
+  if not win.user_vars then return false end
+  if not win.user_vars.NVIM_ATTACHED then return false end
+    local pid = win.user_vars.NVIM_ATTACHED
+  -- PERF: is there a more lightweight way of checking the pid exists?
+  local out = vim.system({ "ps", "-p", tostring(pid) }):wait()
+  return out.code == 0
+end
 
 return M

@@ -67,11 +67,14 @@ function K.attach_to(cfg, ls)
       end
     end
 
-    if not cfg.attach_to_win then
+    if not cfg.attach_to_win and cfg.redirect_existing_shell then
+      local is_nvim_attached = require("kitty.ls").is_nvim_attached
       -- Recheck filtered out candidates for shells
       for _, win in ipairs(candidates) do
         for _, p in ipairs(win.foreground_processes) do
-          if p.cmdline[1] and p.cmdline[1]:sub(-2) == "sh" then
+          -- TODO: I should somehow check if an existing nvim is attached to this shell
+          -- Maybe use set-user-var
+          if p.cmdline[1] and p.cmdline[1]:sub(-2) == "sh" and is_nvim_attached(win) then
             cfg.attach_to_win = win.id
             cfg.cd_to_cwd = cwd
           end
@@ -87,7 +90,8 @@ local function inject_env(sh, k, env, value)
   if sh == "fish" then
     k:send("set -x " .. k .. " " .. value .. "\r")
   else
-    vim.notify("Use a better shell or give me a PR (couldn't inject env in " .. sh .. " shell)")
+    k:send("export " .. k .. "=" .. value .. "\r")
+    -- vim.notify("Use a better shell or give me a PR (unimplemented inject env in " .. sh .. " shell)")
   end
 end
 
@@ -127,19 +131,28 @@ K.setup = function(cfg, cb)
     -- Couldn't find any existing window
     if not cfg.attach_to_win then
       -- vim.notify("Creating a new Kitty window", vim.log.levels.INFO)
-      if cfg.create_new_win ~= false then K.instance = CW.launch(cfg, cfg.create_new_win or true) end
+      if cfg.create_new_win ~= false then
+        -- K.instance = CW.launch(cfg, cfg.create_new_win or true)
+        K.instance = CW.sub_window(cfg, cfg.create_new_win or true)
+      end
     else
       -- vim.notify("Found Kitty window " .. tostring(cfg.attach_to_win), vim.log.levels.INFO)
       local win = ls:window_by_id(cfg.attach_to_win)
       local L = require "kitty.ls"
       cfg = vim.tbl_deep_extend("keep", cfg, L.term_config(win))
       K.instance = require("kitty.term"):new(cfg)
-      if cfg.cd_to_cwd then K.instance:cmd("cd " .. cfg.cd_to_cwd) end
+      if cfg.cd_to_cwd then
+        K.instance:defer_till_open { "cmd", { "cd " .. cfg.cd_to_cwd } }
+        -- K.instance:cmd("cd " .. cfg.cd_to_cwd)
+      end
     end
 
-    if K.instance then K.setup = function(_) return K end end
-
-    kutils.staticify(K.instance, K)
+    if K.instance then
+      -- K.instance:set_user_vars { NVIM_ATTACHED = vim.fn.getpid() }
+      K.instance:defer_till_open { "set_user_vars", { { NVIM_ATTACHED = vim.fn.getpid() } } }
+      K.setup = function(_) return K end
+      kutils.staticify(K.instance, K)
+    end
 
     -- K.set_window_title(K.title)
 

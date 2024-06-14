@@ -26,6 +26,8 @@ local Kitty = {
 ---@param args string[] arguments
 ---@return string[] Commandline than can be used with eg. vim.system
 function Kitty:build_api_command(cmd, args)
+  local open = self:open(self, {})
+  if open then open:wait() end -- TODO: do we even have to wait?
   return kutils.build_api_command(self.listen_on, self.match_arg, self.kitty_client_exe, cmd, args)
 end
 ---Run a Kitty remote control API command
@@ -35,6 +37,12 @@ end
 ---@param on_exit fun(out: vim.SystemCompleted)?
 ---@return vim.SystemObj
 function Kitty:api_command(cmd, args, system_opts, on_exit)
+  if type(system_opts) == "function" then
+    on_exit = system_opts
+    system_opts = {}
+  end
+  local open = self:open(self, {})
+  if open then open:wait() end -- TODO: do we even have to wait?
   return kutils.api_command(self.listen_on, self.match_arg, self.kitty_client_exe, cmd, args, system_opts, on_exit)
 end
 ---Append arguments required to match `self` kitty window
@@ -81,6 +89,7 @@ function Kitty:new(o)
     o.from_id = o.attach_to_win
     if o.attach_to_win == true or o.attach_to_win == "current" then o.from_id = kutils.current_win_id() end
     o.is_opened = true
+    -- TODO: use a similar open function as subwindows so that we can reopen
     o.open = function(...) end
     o.attach_to_win = nil
   end
@@ -129,17 +138,51 @@ function Kitty:close_blocking(...) return self:close(...):wait() end
 local function open_if_not_yet(fn)
   return function(self, args, system_opts, on_exit)
     if self.is_opened then
-      self:focus() -- FIXME: sure about this?
+      -- self:focus() -- FIXME: sure about this?
       return
     end
 
-    local handle = { fn(self, args, system_opts, on_exit) }
+    local handle = fn(self, args, system_opts, function(...)
+      if self.deferred_till_open then
+        for i, cmd in pairs(self.deferred_till_open) do
+          self:run_packed_cmd(cmd)
+          if cmd.not_on_reopen then self.deferred_till_open[i] = nil end
+        end
+      end
+      if on_exit then on_exit(...) end
+    end)
 
     self.is_opened = true
 
-    return unpack(handle)
+    return handle
   end
 end
+
+--- Defer a kitty command until this terminal has been opened
+-- Description.
+-- @param name type Parameter description.
+-- @return type  Description of the returned object.
+-- @usage Example about how to use it.
+function Kitty:defer_till_open(cmd)
+  if self.is_opened then
+    vim.print(cmd)
+    self:run_packed_cmd(cmd)
+  else
+    self.deferred_till_open = self.deferred_till_open or {}
+    self.deferred_till_open[#self.deferred_till_open + 1] = cmd
+  end
+end
+function Kitty:defer()
+  return setmetatable({ self }, {
+    __index = function(t, name)
+      return function(...)
+        local args = table.pack(...)
+        t[1]:defer_till_open { name, args }
+      end
+    end,
+  })
+end
+function Kitty:run_packed_cmd(cmd) self[cmd[1]](self, unpack(cmd[2])) end
 
 function Kitty:reopen(...)
   self.is_opened = false
@@ -371,7 +414,13 @@ Kitty.run_kitten = from_api_command "kitten"
 
 function Kitty:focus(system_opts, on_exit)
   local default_args = {}
-  return self:api_command(self.is_tab and "focus-tab" or "focus-window", default_args, system_opts, on_exit)
+  return self:api_command(self.is_tab and "focus-tab" or "focus-window", default_args, system_opts, function(out)
+    if out.code ~= 0 then
+      self:reopen({}, system_opts, on_exit)
+    else
+      if on_exit then on_exit(out) end
+    end
+  end)
 end
 Kitty.resize_os_window = from_api_command "resize-os-window"
 Kitty.resize_window = from_api_command "resize-window"
@@ -809,7 +858,7 @@ function Kitty:hints(opts, system_opts, on_exit)
       if prg.type == "linenum" then
         args[#args + 1] = "--linenum-action"
         args[#args + 1] = where
-        if prg.program then args[#args] = where .. " " .. (prg.program or vim.v.argv[0]) end
+        if prg.program then args[#args] = where .. " " .. (prg.program or vim.v.argv[1]) end
       else
         if prg.program then
           args[#args + 1] = "--program"
@@ -859,6 +908,16 @@ function Kitty:hints(opts, system_opts, on_exit)
   return self:api_command("kitten", args, system_opts, function(out)
     if out.code == 0 then self:focus({}, on_exit) end
   end)
+end
+
+function Kitty:set_user_vars(dict, on_exit)
+  vim.print(dict)
+  return self:api_command(
+    "set-user-vars",
+    vim.iter(pairs(dict)):map(function(key, value) return key .. "=" .. value end):totable(),
+    {},
+    on_exit
+  )
 end
 
 function Kitty:set_match_arg(arg) self.match_arg = arg end

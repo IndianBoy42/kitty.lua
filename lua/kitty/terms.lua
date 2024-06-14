@@ -167,7 +167,6 @@ M.setup = function(opts)
       if args.fargs and #args.fargs > 0 then
         t:cmd(args.args)
       else
-        -- TODO:
         t:focus()
       end
     else
