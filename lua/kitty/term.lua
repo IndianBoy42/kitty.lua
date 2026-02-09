@@ -6,11 +6,10 @@ local kutils = require "kitty.utils"
 
 ---@class KittyTerminal
 local Kitty = {
-  title = "Kitty.nvim",
+  title = "",
   listen_on = kutils.port_from_pid, ---@type string|function
   default_launch_location = "tab",
   is_tab = false,
-  launch_counter = 0,
   from_id = 1,
   kitty_client_exe = kutils.kitten_exe(),
   send_text_prefix = "",
@@ -97,11 +96,6 @@ function Kitty:new(o)
     o:set_match_arg_from_id(o.from_id)
     o.from_id = nil
   end
-  -- Warn about Duplicate window titles
-  -- for _, v in ipairs(titles) do
-  --   if o.title == v then vim.notify("Kitty Window title already used: " .. o.title, vim.log.WARN, {}) end
-  -- end
-  titles[#titles + 1] = o.title
 
   return o
 end
@@ -210,7 +204,7 @@ Kitty.open = open_if_not_yet(function(self, args, system_opts, on_exit)
       cmdline[#cmdline + 1] = "env=" .. k .. "=" .. v
     end
   end
-  if self.title then
+  if self.title and #self.title > 0 then
     cmdline[#cmdline + 1] = "--title"
     cmdline[#cmdline + 1] = self.title
   end
@@ -300,10 +294,6 @@ function Kitty:sub_window(o, where)
 
   o = o or {}
   o.listen_on = self.listen_on
-  if o.title == nil or o.title == self.title then
-    o.title = self.title .. "-" .. self.launch_counter
-    self.launch_counter = self.launch_counter + 1
-  end
   o.attach_to_win = false
   o.from_id = nil
   o.is_opened = false

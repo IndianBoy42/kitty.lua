@@ -2,7 +2,6 @@
 local K = {}
 local kutils = require "kitty.utils"
 local defaults = {
-  title = "Kitty.nvim",
   attach_to_existing_os_win = true,
   attach_to_existing_kt_win = true,
   attach_to_existing_tab = true,

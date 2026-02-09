@@ -1,7 +1,7 @@
 local K = {}
 local kutils = require "kitty.utils"
 local defaults = {
-  title = "Kitty-current-win",
+  title = "",
   attach_to_win = true,
 }
 K.setup = function(cfg)
